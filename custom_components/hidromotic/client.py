@@ -85,7 +85,7 @@ class HidromoticClient:
             if self._session is None:
                 self._session = aiohttp.ClientSession()
 
-            url = f"ws://{self.host}/ws"
+            url = f"ws://{self.host}/rpc"
             _LOGGER.debug("Connecting to %s", url)
             self._ws = await self._session.ws_connect(url, heartbeat=30)
             self._connected = True
