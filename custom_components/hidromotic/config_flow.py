@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
+from pyhidromotic import HidromoticClient
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
@@ -12,8 +14,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .client import HidromoticClient
-from .const import DOMAIN
+from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -32,10 +33,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         if not await client.connect():
             raise CannotConnect
 
-        # Wait a moment for data to arrive
-        import asyncio
-
-        await asyncio.sleep(2)
+        # Wait for initial data from device
+        await asyncio.sleep(INITIAL_DATA_WAIT_SECONDS)
 
         # Get device info
         device_id = client.data.get("pic_id", "unknown")

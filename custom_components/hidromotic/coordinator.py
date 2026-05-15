@@ -7,12 +7,13 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
+from pyhidromotic import HidromoticClient
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .client import HidromoticClient
-from .const import DOMAIN
+from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
 
         # Wait for initial data
-        await asyncio.sleep(2)
+        await asyncio.sleep(INITIAL_DATA_WAIT_SECONDS)
 
         # Set initial data
         self.async_set_updated_data(self.client.data)
@@ -64,6 +65,10 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_set_zone_state(self, zone_id: int, on: bool) -> None:
         """Set zone state."""
         await self.client.set_zone_state(zone_id, on)
+
+    async def async_set_tank_state(self, tank_id: int, on: bool) -> None:
+        """Set tank state."""
+        await self.client.set_tank_state(tank_id, on)
 
     async def async_refresh_data(self) -> None:
         """Request data refresh from device."""
