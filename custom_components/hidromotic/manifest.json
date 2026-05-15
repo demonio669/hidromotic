@@ -3,9 +3,11 @@
   "name": "Hidromotic",
   "codeowners": ["@bulju"],
   "config_flow": true,
-  "documentation": "https://www.home-assistant.io/integrations/hidromotic",
+  "dependencies": [],
+  "documentation": "https://github.com/demonio669/hidromotic/",
   "integration_type": "device",
   "iot_class": "local_push",
-  "quality_scale": "bronze",
-  "requirements": []
+  "issue_tracker": "https://github.com/demonio669/hidromotic/issues",
+  "requirements": [],
+  "version": "1.0.0"
 }
