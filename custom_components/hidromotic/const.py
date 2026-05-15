@@ -1,8 +1,6 @@
-"""Constants for the Hidromotic integration."""
+"""Constants for Hidromotic devices."""
 
-DOMAIN = "hidromotic"
-
-# Output types from web.js (tipo & 0xF0)
+# Output types from device firmware (tipo & 0xF0)
 OUTPUT_TYPE_MANGUERA = 0x10  # Hose
 OUTPUT_TYPE_TANQUE = 0x20  # Tank
 OUTPUT_TYPE_ZONA = 0x40  # Zone (flooding zone)
@@ -22,9 +20,3 @@ TANK_EMPTY = 1
 TANK_SENSOR_FAIL = 2
 TANK_LEVEL_FAIL = 3
 TANK_MEDIUM = 4
-
-# Pump states
-PUMP_OFF = 0
-PUMP_ON = 1
-PUMP_RECOVERY = 11
-PUMP_NO_WATER = 5
