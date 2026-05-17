@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pyhidromotic import STATE_ON
+#from pyhidromotic import STATE_ON
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
@@ -16,6 +16,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import HidromoticConfigEntry
 from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
+
+from .client import STATE_ON
 
 _LOGGER = logging.getLogger(__name__)
 

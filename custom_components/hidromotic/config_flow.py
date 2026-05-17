@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from pyhidromotic import HidromoticClient
+#from pyhidromotic import HidromoticClient
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
@@ -15,6 +15,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
+
+from .client import HidromoticClient, hex_to_int, int_to_hex
+
 
 _LOGGER = logging.getLogger(__name__)
 
