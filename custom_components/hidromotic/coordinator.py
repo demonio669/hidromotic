@@ -7,13 +7,18 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
-from pyhidromotic import HidromoticClient
+#from pyhidromotic import HidromoticClient
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
+
+
+
+from .client import HidromoticClient, hex_to_int, int_to_hex
+
 
 _LOGGER = logging.getLogger(__name__)
 
