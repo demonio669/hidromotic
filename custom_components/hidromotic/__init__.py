@@ -2,6 +2,19 @@
 
 
 
+from __future__ import annotations
+
+import logging
+
+from pyhidromotic import HidromoticClient
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_HOST, Platform
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
+
+
+
 
 
 
@@ -53,23 +66,8 @@ __version__ = "0.1.0"
 
 
 
-
-
-
-"""The Hidromotic integration."""
-
-from __future__ import annotations
-
-import logging
-
-from pyhidromotic import HidromoticClient
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, Platform
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
-
 from .coordinator import HidromoticCoordinator
+
 
 _LOGGER = logging.getLogger(__name__)
 
