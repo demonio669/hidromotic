@@ -87,6 +87,11 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get all tanks."""
         return self.client.get_tanks()
 
+    def get_pools(self) -> dict[int, dict[str, Any]]:
+        """Get all Pools."""
+        return self.client.get_pools()
+
+
     def get_pump(self) -> dict[str, Any]:
         """Get pump status."""
         return self.client.get_pump()

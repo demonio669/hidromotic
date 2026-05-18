@@ -13,6 +13,9 @@ import aiohttp
 from .const import (
     OUTPUT_TYPE_TANQUE,
     OUTPUT_TYPE_ZONA,
+    OUTPUT_TYPE_MANGUERA,
+    OUTPUT_TYPE_PISCINA,
+    OUTPUT_TYPE_CICLON,
     STATE_DISABLED,
     TANK_EMPTY,
     TANK_FULL,
@@ -227,7 +230,7 @@ class HidromoticClient:
             return
 
         cmd = chr(data[0])
-        _LOGGER.debug("Processing binary command: %s, length: %d", cmd, len(data))
+        _LOGGER.debug("Processing binary command: %s, length: %d, data:%s", cmd, len(data), data)
 
         if cmd == "C":
             # Full configuration data
@@ -253,15 +256,18 @@ class HidromoticClient:
         self._data["pic_id"] = f"0x{data[6]:02X}"
 
         _LOGGER.debug(
-            "Parsing config: is_mini=%s, pic_version=%s, data_len=%d",
+            "Parsing config: is_mini=%s, pic_version=%s, pic_id=%s,  data_len=%d",
             is_mini,
             self._data["pic_version"],
+            self._data["pic_id"],
             len(data),
         )
 
         # Initialize data structures
         self._data["zones"] = {}
         self._data["tanks"] = {}
+        self._data["pools"] = {}
+        self._data["mangueras"] = {}
         self._data["pump"] = {}
         self._data["outputs"] = {}
         # Preserve auto_riego state if already set (e.g., from optimistic update)
@@ -311,6 +317,8 @@ class HidromoticClient:
         while i < len(data) - 6 and slot_id < max_outputs:
             tipo = data[i]
 
+            _LOGGER.debug("tipo: %02x", tipo)
+
             # Check if this is an empty or disabled slot (tipo=0)
             if tipo == 0x00:
                 # Empty/disabled slots are always 6 bytes with no label
@@ -322,9 +330,16 @@ class HidromoticClient:
             # Check for valid zone or tank
             is_zone = 0x41 <= tipo <= 0x4C
             is_tank = 0x21 <= tipo <= 0x2C
+            is_pileta = 0x51 <= tipo <= 0x5C
+            is_manguera = 0x11 <= tipo <= 0x1C
+            is_ciclon = 0x61 <= tipo <= 0x6C
 
-            if not (is_zone or is_tank):
-                i += 1
+
+            #if is_tank :
+            #    _LOGGER.debug("ES TANQUE")
+
+            if not (is_zone or is_tank or is_pileta or is_manguera or is_ciclon):
+                #i += 1
                 continue
 
             # Validate output structure
@@ -338,7 +353,7 @@ class HidromoticClient:
 
             # Sanity check
             if bomba > 1 or estado > STATE_DISABLED:
-                i += 1
+                #i += 1
                 continue
 
             # Read label
@@ -353,6 +368,12 @@ class HidromoticClient:
                     label_len = 0
             else:
                 label_len = 0
+
+            if is_tank:
+                modo = data[i + 6 + label_len  ]
+                nivel= data[i + 6 + label_len + 1 ]
+                etc  = data[i + 6 + label_len + 2 ]
+
 
             tipo_id = (tipo & 0x0F) - 1
 
@@ -375,11 +396,19 @@ class HidromoticClient:
                 label,
             )
 
+            _LOGGER.debug("output data: %s",output_data)
+
             # Move past this output
             # Zones have 6-byte header, tanks have 9-byte header (3 extra bytes for nivel/modo/etc)
-            header_size = 9 if is_tank else 6
+            #header_size = 9 if is_tank else 6
+            header_size = 6
+            if is_tank:
+                header_size = 9
+            #header_size = 9 if is_tank else 6
             i += header_size + label_len
             slot_id += 1
+
+            _LOGGER.debug("i: %d , header_size:%d , label_len:%d",i, header_size,label_len)
 
             # Skip disabled outputs from entity creation
             if estado == STATE_DISABLED:
@@ -403,13 +432,37 @@ class HidromoticClient:
                     "label": label or f"Tank {tipo_id + 1}",
                     "nivel": 0xFF,
                     "modo": 0,
+                    "nivel2": nivel,
+                    "modo2": modo,
+                    "etc": etc,
+                }
+            elif is_pileta:
+                self._data["pools"][tipo_id] = {
+                    "id": tipo_id,
+                    "slot_id": output_data["slot_id"],
+                    "estado": estado,
+                    "label": label or f"Pool {tipo_id + 1}",
+                    "duracion": duracion,
+                }
+            elif is_manguera:
+                self._data["mangueras"][tipo_id] = {
+                    "id": tipo_id,
+                    "slot_id": output_data["slot_id"],
+                    "estado": estado,
+                    "label": label or f"Manguera {tipo_id + 1}",
+                    "duracion": duracion,
                 }
 
         _LOGGER.debug(
-            "Parsed data: zones=%s, tanks=%s",
+            "Parsed data: zones=%s, tanks=%s, pools=%s, pump=%s, outputs=%s",
             list(self._data["zones"].keys()),
             list(self._data["tanks"].keys()),
+            list(self._data["pools"].keys()),
+            list(self._data["pump"].keys()),
+            list(self._data["outputs"].keys()),
         )
+
+        _LOGGER.debug(self._data["outputs"])
 
     async def _parse_running_data(self, data: bytes) -> None:
         """Parse running data update (command 'D')."""
@@ -524,6 +577,10 @@ class HidromoticClient:
     def get_tanks(self) -> dict[int, dict[str, Any]]:
         """Get all active tanks."""
         return self._data.get("tanks", {})
+
+    def get_pools(self) -> dict[int, dict[str, Any]]:
+        """Get all active pools."""
+        return self._data.get("pools", {})
 
     def get_pump(self) -> dict[str, Any]:
         """Get pump status."""

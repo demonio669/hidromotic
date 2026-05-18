@@ -14,10 +14,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN
+from .const import DOMAIN,STATE_ON
 from .coordinator import HidromoticCoordinator
 
-from .client import STATE_ON
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,6 +32,7 @@ async def async_setup_entry(
     # Track which zones and tanks we've added
     added_zones: set[int] = set()
     added_tanks: set[int] = set()
+    added_pools: set[int] = set()
 
     @callback
     def async_add_switches() -> None:
@@ -56,6 +56,18 @@ async def async_setup_entry(
                 new_entities.append(
                     HidromoticTankSwitch(coordinator, entry, tank_id, tank_data)
                 )
+
+        # Add pool switches
+        pools = coordinator.get_pools()
+        _LOGGER.debug("Pools: %s", pools)
+
+        for pool_id, pool_data in pools.items():
+            if pool_id not in added_pools:
+                added_pools.add(pool_id)
+                new_entities.append(
+                    HidromoticPoolSwitch(coordinator, entry, pool_id, pool_data)
+                )
+
 
         if new_entities:
             async_add_entities(new_entities)
@@ -213,6 +225,72 @@ class HidromoticTankSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntit
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the tank (stop filling)."""
         await self.coordinator.async_set_tank_state(self._tank_id, False)
+
+
+
+class HidromoticPoolSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntity):
+    """Representation of a Hidromotic Pool switch."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        pool_id: int,
+        pool_data: dict[str, Any],
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self._pool_id = pool_id
+        self._entry = entry
+
+        self._attr_unique_id = f"{entry.entry_id}_pool_{pool_id}"
+        self._attr_name = pool_data.get("label") or f"Pool {pool_id + 1}"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini"
+            if coordinator.client.data.get("is_mini")
+            else "CHI Smart",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        pools = self.coordinator.get_pools()
+        return self._pool_id in pools and super().available
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if the pool is filling."""
+        pools = self.coordinator.get_pools()
+        pool = pools.get(self._pool_id)
+        if pool:
+            return pool.get("estado", 0) == STATE_ON
+        return False
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        pools = self.coordinator.get_pools()
+        pool = pools.get(self._pool_id)
+        if pool:
+            return {
+                "slot_id": pool.get("slot_id"),
+                "level": pool.get("nivel"),
+            }
+        return {}
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the pool (start filling)."""
+        await self.coordinator.async_set_pool_state(self._pool_id, True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off the pool (stop filling)."""
+        await self.coordinator.async_set_pool_state(self._pool_id, False)
 
 
 class HidromoticAutoRiegoSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntity):
