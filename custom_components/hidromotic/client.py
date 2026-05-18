@@ -401,14 +401,18 @@ class HidromoticClient:
 
             # Move past this output
             # Zones have 6-byte header, tanks have 9-byte header (3 extra bytes for nivel/modo/etc)
-            #header_size = 9 if is_tank else 6
-            header_size = 6
-            if is_tank:
-                header_size = 9
-                if estado == STATE_DISABLED:
-                    header_size = 6
+
+            header_size = 9 if is_tank else 6
+            if estado == STATE_DISABLED:
+                header_size = 6
+
+
+            #header_size = 6
+            #if is_tank:
+            #    header_size = 9
 
             #header_size = 9 if is_tank else 6
+
             i += header_size + label_len
             slot_id += 1
 
