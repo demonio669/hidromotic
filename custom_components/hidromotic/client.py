@@ -506,6 +506,12 @@ class HidromoticClient:
                                 # Tank also has nivel
                                 if i + 3 < len(data):
                                     self._data["tanks"][tipo_id]["nivel"] = data[i + 3]
+                            elif (
+                                tipo_upper == OUTPUT_TYPE_PISCINA
+                                and tipo_id in self._data.get("pools", {})
+                            ):
+                                self._data["pools"][tipo_id]["estado"] = estado
+
                             break
                 i += 3
 
@@ -547,6 +553,25 @@ class HidromoticClient:
         command = f"#@S{int_to_hex(slot_id)}M{state};"
         _LOGGER.debug("Setting tank %d (slot %d) to %s", tank_id, slot_id, state)
         await self._send_command(command)
+
+    async def set_pool_state(self, pool_id: int, on: bool) -> None:
+        """Turn a pool on or off.
+
+        Args:
+            pool_id: The pool ID to control.
+            on: True to start filling, False to stop filling.
+        """
+        pool = self._data.get("pools", {}).get(pool_id)
+        if not pool:
+            _LOGGER.warning("Pool %d not found", pool_id)
+            return
+
+        slot_id = pool["slot_id"]
+        state = 1 if on else 0
+        command = f"#@S{int_to_hex(slot_id)}M{state};"
+        _LOGGER.debug("Setting pool %d (slot %d) to %s", pool_id, slot_id, state)
+        await self._send_command(command)
+
 
     async def set_auto_riego(self, on: bool) -> None:
         """Enable or disable automatic irrigation.
