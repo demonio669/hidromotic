@@ -322,7 +322,7 @@ class HidromoticClient:
             # Check if this is an empty or disabled slot (tipo=0)
             if tipo == 0x00:
                 # Empty/disabled slots are always 6 bytes with no label
-                _LOGGER.debug("Slot %d: empty/disabled at pos %d", slot_id, i)
+                _LOGGER.debug("Slot %d: empty/disabled at pos %d (%s)", slot_id, i, f"{i:02X}")
                 i += 6
                 slot_id += 1
                 continue
@@ -388,9 +388,10 @@ class HidromoticClient:
             }
 
             _LOGGER.debug(
-                "Slot %d at pos %d: tipo=%s, estado=%d, label=%s",
+                "Slot %d at pos %d (%s): tipo=%s, estado=%d, label=%s",
                 slot_id,
                 i,
+                f"{i:02X}",
                 output_data["tipo"],
                 estado,
                 label,
@@ -404,6 +405,9 @@ class HidromoticClient:
             header_size = 6
             if is_tank:
                 header_size = 9
+                if estado == STATE_DISABLED:
+                    header_size = 6
+
             #header_size = 9 if is_tank else 6
             i += header_size + label_len
             slot_id += 1
