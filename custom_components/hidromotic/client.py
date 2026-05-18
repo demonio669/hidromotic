@@ -369,10 +369,10 @@ class HidromoticClient:
             else:
                 label_len = 0
 
-            if is_tank:
+            if is_tank and not (estado == STATE_DISABLED) :
                 modo = data[i + 6 + label_len  ]
-                nivel= data[i + 6 + label_len + 1 ]
-                etc  = data[i + 6 + label_len + 2 ]
+                etc  = data[i + 6 + label_len + 1 ]
+                nivel= data[i + 6 + label_len + 2 ]
 
 
             tipo_id = (tipo & 0x0F) - 1
@@ -438,10 +438,8 @@ class HidromoticClient:
                     "slot_id": output_data["slot_id"],
                     "estado": estado,
                     "label": label or f"Tank {tipo_id + 1}",
-                    "nivel": 0xFF,
-                    "modo": 0,
-                    "nivel2": nivel,
-                    "modo2": modo,
+                    "nivel": nivel,
+                    "modo": modo,
                     "etc": etc,
                 }
             elif is_pileta:

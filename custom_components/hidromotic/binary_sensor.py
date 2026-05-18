@@ -38,6 +38,7 @@ async def async_setup_entry(
         tanks = coordinator.get_tanks()
         new_entities = []
 
+
         for tank_id, tank_data in tanks.items():
             if tank_id not in added_tanks:
                 added_tanks.add(tank_id)
@@ -92,6 +93,8 @@ class HidromoticTankFullSensor(
             else "CHI Smart",
         )
 
+
+
     @property
     def available(self) -> bool:
         """Return if entity is available."""
@@ -138,7 +141,8 @@ class HidromoticTankEmptySensor(
     """Binary sensor for tank empty status."""
 
     _attr_has_entity_name = True
-    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    #_attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_device_class = BinarySensorDeviceClass.MOISTURE
 
     def __init__(
         self,
@@ -165,11 +169,13 @@ class HidromoticTankEmptySensor(
             else "CHI Smart",
         )
 
+
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
+        _LOGGER.debug("tankaaa")
         if tank:
             nivel = tank.get("nivel", 0xFF)
             return nivel != 0xFF and nivel not in (2, 3) and super().available
@@ -180,6 +186,8 @@ class HidromoticTankEmptySensor(
         """Return true if the tank is empty (problem state)."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
+        _LOGGER.debug("tankaa: %s", tank)
+        return True
         if tank:
             return tank.get("nivel", 0xFF) == TANK_EMPTY
         return False
