@@ -268,6 +268,7 @@ class HidromoticClient:
         self._data["tanks"] = {}
         self._data["pools"] = {}
         self._data["mangueras"] = {}
+        self._data["ciclon"] = {}
         self._data["pump"] = {}
         self._data["outputs"] = {}
         # Preserve auto_riego state if already set (e.g., from optimistic update)
@@ -374,6 +375,15 @@ class HidromoticClient:
                 etc  = data[i + 6 + label_len + 1 ]
                 nivel= data[i + 6 + label_len + 2 ]
 
+            if is_ciclon and not (estado == STATE_DISABLED) :
+                automatico_tareas_enabled = data[i + 6 + label_len  ]
+                automatico_fin_tareas_enabled = data[i + 6 + label_len + 1 ]
+                automatico_tiempo_bomba_enabled = data[i + 6 + label_len + 2 ]
+                automatico_tareas = data[i + 6 + label_len + 3  ] | (data[i + 6 + label_len + 4  ] << 8)
+                automatico_fin_tareas  = data[i + 6 + label_len + 5 ]
+                automatico_tiempo_bomba= data[i + 6 + label_len + 6 ]  | (data[i + 6 + label_len + 7  ] << 8)
+                # poe alguna causa, la pos 9 y pos 10 vuelven a repetir las pos 7 y 6 automatico_tiempo_bomba
+
 
             tipo_id = (tipo & 0x0F) - 1
 
@@ -401,6 +411,7 @@ class HidromoticClient:
 
             # Move past this output
             # Zones have 6-byte header, tanks have 9-byte header (3 extra bytes for nivel/modo/etc)
+            # Ciclon have 16-byte header
 
             header_size = 9 if is_tank else 6
             if is_ciclon:
@@ -410,11 +421,6 @@ class HidromoticClient:
                 header_size = 6
 
 
-            #header_size = 6
-            #if is_tank:
-            #    header_size = 9
-
-            #header_size = 9 if is_tank else 6
 
             i += header_size + label_len
             slot_id += 1
@@ -461,17 +467,35 @@ class HidromoticClient:
                     "label": label or f"Manguera {tipo_id + 1}",
                     "duracion": duracion,
                 }
+            elif is_ciclon:
+                self._data["ciclon"][tipo_id] = {
+                    "id": tipo_id,
+                    "slot_id": output_data["slot_id"],
+                    "estado": estado,
+                    "label": label or f"Cilon {tipo_id + 1}",
+                    "duracion": duracion,
+                    "automatico_tareas_enabled":  automatico_tareas_enabled,
+                    "automatico_fin_tareas_enabled":  automatico_fin_tareas_enabled,
+                    "automatico_tiempo_bomba_enabled":  automatico_tiempo_bomba_enabled,
+                    "automatico_tareas":  automatico_tareas,
+                    "automatico_fin_tareas":  automatico_fin_tareas,
+                    "automatico_tiempo_bomba":  automatico_tiempo_bomba,
+                    #"pos_6":  pos_6,
+                    #"pos_9":  pos_9,
+                }
 
         _LOGGER.debug(
-            "Parsed data: zones=%s, tanks=%s, pools=%s, pump=%s, outputs=%s",
+            "Parsed data: zones=%s, tanks=%s, pools=%s, mangueras=%s, ciclon=%s, outputs=%s",
             list(self._data["zones"].keys()),
             list(self._data["tanks"].keys()),
             list(self._data["pools"].keys()),
-            list(self._data["pump"].keys()),
+            list(self._data["mangueras"].keys()),
+            list(self._data["ciclon"].keys()),
             list(self._data["outputs"].keys()),
         )
 
         _LOGGER.debug(self._data["outputs"])
+        _LOGGER.debug(self._data["ciclon"])
 
     async def _parse_running_data(self, data: bytes) -> None:
         """Parse running data update (command 'D')."""
