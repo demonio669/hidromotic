@@ -80,6 +80,9 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Set pool state."""
         await self.client.set_pool_state(pool_id, on)
 
+    async def async_set_manguera_state(self, manguera_id: int, on: bool) -> None:
+        """Set manguera state."""
+        await self.client.set_manguera_state(manguera_id, on)
 
     async def async_refresh_data(self) -> None:
         """Request data refresh from device."""
@@ -97,6 +100,9 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get all Pools."""
         return self.client.get_pools()
 
+    def get_mangueras(self) -> dict[int, dict[str, Any]]:
+        """Get all Mangueras."""
+        return self.client.get_mangueras()
 
     def get_pump(self) -> dict[str, Any]:
         """Get pump status."""

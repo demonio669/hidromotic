@@ -33,6 +33,7 @@ async def async_setup_entry(
     added_zones: set[int] = set()
     added_tanks: set[int] = set()
     added_pools: set[int] = set()
+    added_mangueras: set[int] = set()
 
     @callback
     def async_add_switches() -> None:
@@ -66,6 +67,17 @@ async def async_setup_entry(
                 added_pools.add(pool_id)
                 new_entities.append(
                     HidromoticPoolSwitch(coordinator, entry, pool_id, pool_data)
+                )
+
+        # Add manguera switches
+        mangueras = coordinator.get_mangueras()
+        _LOGGER.debug("Mangueras: %s", mangueras)
+
+        for manguera_id, manguera_data in mangueras.items():
+            if manguera_id not in added_mangueras:
+                added_mangueras.add(manguera_id)
+                new_entities.append(
+                    HidromoticMangueraSwitch(coordinator, entry, manguera_id, manguera_data)
                 )
 
 
@@ -291,6 +303,74 @@ class HidromoticPoolSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntit
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the pool (stop filling)."""
         await self.coordinator.async_set_pool_state(self._pool_id, False)
+
+
+class HidromoticMangueraSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntity):
+    """Representation of a Hidromotic Manguera switch."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        manguera_id: int,
+        manguera_data: dict[str, Any],
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self._manguera_id = manguera_id
+        self._entry = entry
+
+        self._attr_unique_id = f"{entry.entry_id}_manguera_{manguera_id}"
+        self._attr_name = manguera_data.get("label") or f"Manguera {manguera_id + 1}"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini"
+            if coordinator.client.data.get("is_mini")
+            else "CHI Smart",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        mangueras = self.coordinator.get_mangueras()
+        return self._manguera_id in mangueras and super().available
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if the manguera is filling."""
+        mangueras = self.coordinator.get_mangueras()
+        manguera = mangueras.get(self._manguera_id)
+        if manguera:
+            return manguera.get("estado", 0) == STATE_ON
+        return False
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        mangueras = self.coordinator.get_mangueras()
+        manguera = mangueras.get(self._manguera_id)
+        if manguera:
+            return {
+                "slot_id": manguera.get("slot_id"),
+                "level": manguera.get("nivel"),
+            }
+        return {}
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the manguera (start filling)."""
+        await self.coordinator.async_set_manguera_state(self._manguera_id, True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off the manguera (stop filling)."""
+        await self.coordinator.async_set_manguera_state(self._manguera_id, False)
+
+
+
 
 
 class HidromoticAutoRiegoSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntity):

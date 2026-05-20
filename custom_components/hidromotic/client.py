@@ -544,6 +544,12 @@ class HidromoticClient:
                                 and tipo_id in self._data.get("pools", {})
                             ):
                                 self._data["pools"][tipo_id]["estado"] = estado
+                            elif (
+                                tipo_upper == OUTPUT_TYPE_MANGUERA
+                                and tipo_id in self._data.get("mangueras", {})
+                            ):
+                                self._data["mangueras"][tipo_id]["estado"] = estado
+
 
                             break
                 i += 3
@@ -606,6 +612,25 @@ class HidromoticClient:
         await self._send_command(command)
 
 
+    async def set_manguera_state(self, manguera_id: int, on: bool) -> None:
+        """Turn a manguera on or off.
+
+        Args:
+            manguera_id: The manguera ID to control.
+            on: True to start filling, False to stop filling.
+        """
+        manguera = self._data.get("mangueras", {}).get(manguera_id)
+        if not manguera:
+            _LOGGER.warning("Manguera %d not found", manguera_id)
+            return
+
+        slot_id = manguera["slot_id"]
+        state = 1 if on else 0
+        command = f"#@S{int_to_hex(slot_id)}M{state};"
+        _LOGGER.debug("Setting manguera %d (slot %d) to %s", manguera_id, slot_id, state)
+        await self._send_command(command)
+
+
     async def set_auto_riego(self, on: bool) -> None:
         """Enable or disable automatic irrigation.
 
@@ -639,6 +664,11 @@ class HidromoticClient:
     def get_pools(self) -> dict[int, dict[str, Any]]:
         """Get all active pools."""
         return self._data.get("pools", {})
+
+    def get_mangueras(self) -> dict[int, dict[str, Any]]:
+        """Get all active mangueras."""
+        return self._data.get("mangueras", {})
+
 
     def get_pump(self) -> dict[str, Any]:
         """Get pump status."""
