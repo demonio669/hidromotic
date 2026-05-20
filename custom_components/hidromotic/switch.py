@@ -34,6 +34,7 @@ async def async_setup_entry(
     added_tanks: set[int] = set()
     added_pools: set[int] = set()
     added_mangueras: set[int] = set()
+    added_riegos: set[int] = set()
 
     @callback
     def async_add_switches() -> None:
@@ -78,6 +79,17 @@ async def async_setup_entry(
                 added_mangueras.add(manguera_id)
                 new_entities.append(
                     HidromoticMangueraSwitch(coordinator, entry, manguera_id, manguera_data)
+                )
+
+        # Add riego switches
+        riegos = coordinator.get_riegos()
+        _LOGGER.debug("Riegos: %s", riegos)
+
+        for riego_id, riego_data in riegos.items():
+            if riego_id not in added_riegos:
+                added_riegos.add(riego_id)
+                new_entities.append(
+                    HidromoticRiegoSwitch(coordinator, entry, riego_id, riego_data)
                 )
 
 
@@ -368,6 +380,73 @@ class HidromoticMangueraSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchE
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off the manguera (stop filling)."""
         await self.coordinator.async_set_manguera_state(self._manguera_id, False)
+
+
+
+
+class HidromoticRiegoSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntity):
+    """Representation of a Hidromotic Riego switch."""
+
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        riego_id: int,
+        riego_data: dict[str, Any],
+    ) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self._riego_id = riego_id
+        self._entry = entry
+
+        self._attr_unique_id = f"{entry.entry_id}_riego_{riego_id}"
+        self._attr_name = riego_data.get("label") or f"Riego {riego_id + 1}"
+
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini"
+            if coordinator.client.data.get("is_mini")
+            else "CHI Smart",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available."""
+        riegos = self.coordinator.get_riegos()
+        return self._riego_id in riegos and super().available
+
+    @property
+    def is_on(self) -> bool:
+        """Return true if the riego is filling."""
+        riegos = self.coordinator.get_riegos()
+        riego = riegos.get(self._riego_id)
+        if riego:
+            return riego.get("estado", 0) == STATE_ON
+        return False
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return extra state attributes."""
+        riegos = self.coordinator.get_riegos()
+        riego = riegos.get(self._riego_id)
+        if riego:
+            return {
+                "slot_id": riego.get("slot_id"),
+            }
+        return {}
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the riego (start filling)."""
+        await self.coordinator.async_set_riego_state(self._riego_id, True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off the riego (stop filling)."""
+        await self.coordinator.async_set_riego_state(self._riego_id, False)
+
 
 
 

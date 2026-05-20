@@ -270,6 +270,7 @@ class HidromoticClient:
         self._data["mangueras"] = {}
         self._data["ciclon"] = {}
         self._data["pump"] = {}
+        self._data["riegos"] = {}
         self._data["outputs"] = {}
         # Preserve auto_riego state if already set (e.g., from optimistic update)
         if "auto_riego" not in self._data:
@@ -497,6 +498,63 @@ class HidromoticClient:
         _LOGGER.debug(self._data["outputs"])
         _LOGGER.debug(self._data["ciclon"])
 
+
+
+        for idx in range(i, len(data)):
+            if data[idx] == 0x52 and r_pos is None:  # 'R' - Riego Automático
+                r_pos = idx
+                break  # Found R marker, stop scanning
+        _LOGGER.debug("Found sections: R at %s", r_pos)
+
+        # Parse auto_riego state if 'R' section found
+        if r_pos is not None and r_pos + 1 < len(data):
+            self._data["auto_riego"] = data[r_pos + 1] == 1
+            _LOGGER.debug("Auto riego state: %s", self._data["auto_riego"])
+
+
+
+        header_size = 40
+
+        while i < len(data) :
+            tipo_riego = data[i]
+
+            if tipo_riego != 0x48:
+                i+= header_size
+                continue
+
+            _LOGGER.debug("tipo_Riego: %02x", tipo_riego)
+
+            riego_id= data[i + 1]
+            riego_estado= data[i + 2]
+            riego_enabled=data[i + 10]
+            riego_label="Riego " + chr(65 + riego_id)
+            riego_use_sensor_lluvia=data[i + 9]
+
+            if tipo_riego == 0x48:
+                self._data["riegos"][riego_id] = {
+                    "id": riego_id,
+                    "slot_id": riego_id,
+                    "estado": riego_estado,
+                    "enabled": riego_enabled,
+                    "label": riego_label,
+                    "use_sensor_lluvia": riego_use_sensor_lluvia,
+                    "duracion_1": data[i + 15  ] | (data[i + 16  ] << 8),
+                    "duracion_2": data[i + 17  ] | (data[i + 18  ] << 8),
+                    "duracion_3": data[i + 19  ] | (data[i + 20  ] << 8),
+                    "duracion_4": data[i + 21  ] | (data[i + 22  ] << 8),
+                    "duracion_5": data[i + 23  ] | (data[i + 24  ] << 8),
+                }
+
+            i += header_size
+
+            _LOGGER.debug("i: %d , header_size:%d , tipo:%02x",i, header_size,tipo)
+        _LOGGER.debug("riegos: %s ",self._data["riegos"])
+
+
+
+
+
+
     async def _parse_running_data(self, data: bytes) -> None:
         """Parse running data update (command 'D')."""
         i = 6
@@ -552,6 +610,8 @@ class HidromoticClient:
 
 
                             break
+                    #for riego in self._data.get("riegos",{}).values():
+
                 i += 3
 
             else:
@@ -631,6 +691,25 @@ class HidromoticClient:
         await self._send_command(command)
 
 
+    async def set_riego_state(self, riego_id: int, on: bool) -> None:
+        """Turn a riego on or off.
+
+        Args:
+            riego_id: The riego ID to control.
+            on: True to start filling, False to stop filling.
+        """
+        riego = self._data.get("riegos", {}).get(riego_id)
+        if not riego:
+            _LOGGER.warning("Riego %d not found", riego_id)
+            return
+
+        slot_id = riego["slot_id"]
+        state = 1 if on else 0
+        command = f"#@H{int_to_hex(slot_id)}M{state};"
+        _LOGGER.debug("Setting riego %d (slot %d) to %s", riego_id, slot_id, state)
+        await self._send_command(command)
+
+
     async def set_auto_riego(self, on: bool) -> None:
         """Enable or disable automatic irrigation.
 
@@ -668,6 +747,10 @@ class HidromoticClient:
     def get_mangueras(self) -> dict[int, dict[str, Any]]:
         """Get all active mangueras."""
         return self._data.get("mangueras", {})
+
+    def get_riegos(self) -> dict[int, dict[str, Any]]:
+        """Get all active reigos."""
+        return self._data.get("riegos", {})
 
 
     def get_pump(self) -> dict[str, Any]:
