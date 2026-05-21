@@ -272,6 +272,11 @@ class HidromoticClient:
         self._data["pump"] = {}
         self._data["riegos"] = {}
         self._data["outputs"] = {}
+
+        etc=""
+        nivel=""
+        modo=""
+
         # Preserve auto_riego state if already set (e.g., from optimistic update)
         if "auto_riego" not in self._data:
             self._data["auto_riego"] = True  # Default to enabled on first connect
