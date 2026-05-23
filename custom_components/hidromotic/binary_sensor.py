@@ -141,8 +141,8 @@ class HidromoticTankEmptySensor(
     """Binary sensor for tank empty status."""
 
     _attr_has_entity_name = True
-    #_attr_device_class = BinarySensorDeviceClass.PROBLEM
-    _attr_device_class = BinarySensorDeviceClass.MOISTURE
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    #_attr_device_class = BinarySensorDeviceClass.MOISTURE
 
     def __init__(
         self,

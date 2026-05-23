@@ -478,7 +478,7 @@ class HidromoticClient:
                     "id": tipo_id,
                     "slot_id": output_data["slot_id"],
                     "estado": estado,
-                    "label": label or f"Cilon {tipo_id + 1}",
+                    "label": label or f"Ciclon {tipo_id + 1}",
                     "duracion": duracion,
                     "automatico_tareas_enabled":  automatico_tareas_enabled,
                     "automatico_fin_tareas_enabled":  automatico_fin_tareas_enabled,
