@@ -619,11 +619,27 @@ class HidromoticClient:
                                 and tipo_id in self._data.get("mangueras", {})
                             ):
                                 self._data["mangueras"][tipo_id]["estado"] = estado
-
+                            elif (
+                                tipo_upper == OUTPUT_TYPE_CICLON
+                                and tipo_id in self._data.get("ciclon", {})
+                            ):
+                                self._data["ciclon"][tipo_id]["estado"] = estado
 
                             break
                     #for riego in self._data.get("riegos",{}).values():
 
+                i += 3
+            elif section == "H":
+                if i + 2 < len(data):
+                    riego_id = data[i + 1]
+                    estado = data[i + 2]
+
+                    # Verificamos si el riego existe en nuestro diccionario y lo actualizamos
+                    if riego_id in self._data.get("riegos", {}):
+                        self._data["riegos"][riego_id]["estado"] = estado
+                        _LOGGER.debug("Riego %s actualizado a estado %s", riego_id, estado)
+
+                # Incrementamos i en 3 (1 byte de 'H' + 1 byte de ID + 1 byte de estado)
                 i += 3
 
             else:
