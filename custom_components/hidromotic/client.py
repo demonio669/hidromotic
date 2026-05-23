@@ -288,8 +288,8 @@ class HidromoticClient:
         for idx in range(16, len(data)):
             if data[idx] == 0x42 and b_pos is None:  # 'B' - Bomba (Pump)
                 b_pos = idx
-            elif data[idx] == 0x52 and r_pos is None:  # 'R' - Riego Automático
-                r_pos = idx
+         #   elif data[idx] == 0x52 and r_pos is None:  # 'R' - Riego Automático
+         #       r_pos = idx
             elif data[idx] == 0x53 and s_pos is None:  # 'S' - Slot/Output
                 s_pos = idx
                 break  # Found S marker, stop scanning
@@ -305,9 +305,9 @@ class HidromoticClient:
             _LOGGER.debug("Pump data: %s", self._data["pump"])
 
         # Parse auto_riego state if 'R' section found
-        if r_pos is not None and r_pos + 1 < len(data):
-            self._data["auto_riego"] = data[r_pos + 1] == 1
-            _LOGGER.debug("Auto riego state: %s", self._data["auto_riego"])
+        #if r_pos is not None and r_pos + 1 < len(data):
+        #    self._data["auto_riego"] = data[r_pos + 1] == 1
+        #    _LOGGER.debug("Auto riego state: %s", self._data["auto_riego"])
 
         # Parse outputs starting from 'S' marker
         if s_pos is None:
@@ -548,11 +548,18 @@ class HidromoticClient:
                     "duracion_3": data[i + 19  ] | (data[i + 20  ] << 8),
                     "duracion_4": data[i + 21  ] | (data[i + 22  ] << 8),
                     "duracion_5": data[i + 23  ] | (data[i + 24  ] << 8),
+                    "duracion_6": data[i + 25  ] | (data[i + 26  ] << 8),
+                    "duracion_7": data[i + 27  ] | (data[i + 28  ] << 8),
+                    "duracion_8": data[i + 29  ] | (data[i + 30  ] << 8),
+                    "duracion_9": data[i + 31  ] | (data[i + 32  ] << 8),
+                    "duracion_10": data[i + 33  ] | (data[i + 34  ] << 8),
+                    "duracion_11": data[i + 35  ] | (data[i + 36  ] << 8),
+                    "duracion_12": data[i + 37  ] | (data[i + 38  ] << 8),
                 }
 
             i += header_size
 
-            _LOGGER.debug("i: %d , header_size:%d , tipo:%02x",i, header_size,tipo)
+            _LOGGER.debug("i: %d , header_size:%d , tipo:%02x",i, header_size,tipo_riego)
         _LOGGER.debug("riegos: %s ",self._data["riegos"])
 
 
