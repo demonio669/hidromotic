@@ -187,7 +187,7 @@ class HidromoticTankEmptySensor(
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
         _LOGGER.debug("tankaa: %s", tank)
-        return True
+        #return True
         if tank:
             return tank.get("nivel", 0xFF) == TANK_EMPTY
         return False
