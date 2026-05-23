@@ -43,6 +43,21 @@ async def async_setup_entry(
 
         # Add zone switches
         zones = coordinator.get_zones()
+        tanks = coordinator.get_tanks()
+        pools = coordinator.get_pools()
+        mangueras = coordinator.get_mangueras()
+        riegos = coordinator.get_riegos()
+
+    # SOLUCIÓN: Salida temprana si no hay entidades nuevas por descubrir
+        if (len(zones) == len(added_zones) and
+            len(tanks) == len(added_tanks) and
+            len(pools) == len(added_pools) and
+            len(mangueras) == len(added_mangueras) and
+            len(riegos) == len(added_riegos)):
+            return # Evita ejecutar todo el código de abajo
+
+
+
         for zone_id, zone_data in zones.items():
             if zone_id not in added_zones:
                 added_zones.add(zone_id)
