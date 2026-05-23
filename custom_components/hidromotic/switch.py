@@ -304,7 +304,6 @@ class HidromoticPoolSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntit
         if pool:
             return {
                 "slot_id": pool.get("slot_id"),
-                "level": pool.get("nivel"),
             }
         return {}
 
@@ -369,7 +368,6 @@ class HidromoticMangueraSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchE
         if manguera:
             return {
                 "slot_id": manguera.get("slot_id"),
-                "level": manguera.get("nivel"),
             }
         return {}
 
