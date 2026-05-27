@@ -16,8 +16,8 @@ Una vez configurado, se puede usar esta integracion para manejar el CHI desde Ho
 Esta integracion tiene soporte para:
 
 
-- ** Mangeras **
-- ** Tanques **
+- * Mangeras *
+- * Tanques *
 - ** Piscinas **
 - ** Zonas de Riego **
 - ** Programas de Riego **
