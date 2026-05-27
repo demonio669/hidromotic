@@ -1,10 +1,10 @@
 {
   "domain": "hidromotic",
   "name": "Hidromotic",
-  "codeowners": ["@bulju"],
+  "codeowners": ["@bulju", "@demonio669"],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/demonio669/hidromotic/",
+  "documentation": "https://github.com/demonio669/hidromotic",
   "integration_type": "device",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/demonio669/hidromotic/issues",
