@@ -1,0 +1,8 @@
+ 
+{
+  "name": "Hidromotic",
+  "content_in_root": false,
+  "zip_release": true,
+  "filename": "hidromotic.zip",
+  "render_readme": true
+}
