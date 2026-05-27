@@ -1,7 +1,7 @@
 {
   "domain": "hidromotic",
   "name": "Hidromotic",
-  "codeowners": ["@bulju"],
+  "codeowners": ["@bulju", "@demonio669"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/demonio669/hidromotic/",
