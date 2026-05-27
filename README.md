@@ -16,9 +16,9 @@ Una vez configurado, se puede usar esta integracion para manejar el CHI desde Ho
 Esta integracion tiene soporte para:
 
 
-- *Mangeras*
-- * Tanques *
-- ** Piscinas **
-- ** Zonas de Riego **
-- ** Programas de Riego **
-- ** Riego Automatico **  Activar el Riego Automatico como switch de HA
+- Mangueras
+- Tanques
+- Piscinas
+- Zonas de Riego
+- Programas de Riego
+- Riego Automatico  Activar el Riego Automatico como switch de HA
