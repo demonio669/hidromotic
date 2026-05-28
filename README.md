@@ -23,3 +23,10 @@ Esta integracion tiene soporte para:
 - Programas de Riego
 - HidroCiclon
 - Riego Automatico  Activar el Riego Automatico como switch de HA
+
+
+
+
+Este trabajo se basa en el [trabajo de Juan Manuel](https://github.com/bulju)
+
+Este es un pull request (https://github.com/home-assistant/core/pull/160615) en el que me base para realizar esta integracion
