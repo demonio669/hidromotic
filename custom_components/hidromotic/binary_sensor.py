@@ -189,7 +189,7 @@ class HidromoticTankEmptySensor(
         _LOGGER.debug("tankaa: %s", tank)
         #return True
         if tank:
-            return tank.get("nivel", 0xFF) == TANK_EMPTY
+            return tank.get("nivel", 0xFF) == TANK_FULL
         return False
 
     @property
