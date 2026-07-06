@@ -21,8 +21,12 @@ STATE_WAITING = 5
 STATE_DISABLED = 7  # Disconnected/disabled
 
 # Tank levels (nivel)
-TANK_FULL = 0
-TANK_EMPTY = 1
+#TANK_FULL = 0
+#TANK_EMPTY = 1
+
+TANK_FULL = 1
+TANK_EMPTY = 0
+
 TANK_SENSOR_FAIL = 2
 TANK_LEVEL_FAIL = 3
 TANK_MEDIUM = 4

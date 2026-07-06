@@ -561,6 +561,7 @@ class HidromoticClient:
 
             _LOGGER.debug("i: %d , header_size:%d , tipo:%02x",i, header_size,tipo_riego)
         _LOGGER.debug("riegos: %s ",self._data["riegos"])
+        _LOGGER.debug("Tanques: %s ",self._data["tanks"])
 
 
 
