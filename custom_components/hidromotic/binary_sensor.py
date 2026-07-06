@@ -122,8 +122,8 @@ class HidromoticTankFullSensor(
         if tank:
             nivel = tank.get("nivel", 0xFF)
             level_map = {
-                0: "full",
-                1: "empty",
+                0: "empty",
+                1: "full",
                 2: "sensor_fail",
                 3: "level_fail",
                 4: "medium",
@@ -200,8 +200,8 @@ class HidromoticTankEmptySensor(
         if tank:
             nivel = tank.get("nivel", 0xFF)
             level_map = {
-                0: "full",
-                1: "empty",
+                0: "empty",
+                1: "full",
                 2: "sensor_fail",
                 3: "level_fail",
                 4: "medium",
