@@ -40,7 +40,6 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._remove_callback: Callable[[], None] | None = None
 
     async def async_setup(self) -> bool:
-        """Set up the coordinator."""
         # Register callback for data updates
         self._remove_callback = self.client.register_callback(self._on_data_update)
 
@@ -48,8 +47,12 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not await self.client.connect():
             return False
 
-        # Wait for initial data
-        await asyncio.sleep(INITIAL_DATA_WAIT_SECONDS)
+        # Espera dinámica
+        try:
+            await asyncio.wait_for(self.client.data_ready.wait(), timeout=INITIAL_DATA_WAIT_SECONDS)
+        except TimeoutError:
+            _LOGGER.error("Timeout esperando configuración en coordinator")
+            return False
 
         # Set initial data
         self.async_set_updated_data(self.client.data)

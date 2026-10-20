@@ -70,6 +70,7 @@ class HidromoticClient:
         self._reconnect_task: asyncio.Task[None] | None = None
         self._listener_task: asyncio.Task[None] | None = None
         self._data: dict[str, Any] = {}
+        self.data_ready = asyncio.Event()
         self._lock = asyncio.Lock()
 
     @property
@@ -117,6 +118,7 @@ class HidromoticClient:
         """Disconnect from the device."""
         self._should_reconnect = False
         self._connected = False
+        self.data_ready.clear()
         if self._reconnect_task:
             self._reconnect_task.cancel()
             try:
@@ -140,15 +142,15 @@ class HidromoticClient:
         if not self._ws or self._ws.closed:
             _LOGGER.warning("Cannot send command, not connected")
             return
-        
+
         async with self._lock:
             if command.startswith("#"):
                 payload = f'{{"method":"hdmt","params":{{"c":"{command}"}}}}'
             else:
                 payload = f'{{"id":1111,"method":"hdmt","params":{{"c":"{command}"}}}}'
-            
+
             _LOGGER.debug("Sending command: %s", payload)
-            
+
             try:
                 # CORRECCIÓN DEADLOCK: Timeout de 5 segundos para liberar el lock si la red falla
                 await asyncio.wait_for(self._ws.send_str(payload), timeout=5.0)
@@ -454,6 +456,8 @@ class HidromoticClient:
 
             i += header_size
 
+        self.data_ready.set()
+
     async def _parse_running_data(self, data: bytes) -> None:
         """Parse running data update (command 'D')."""
         i = 6
@@ -515,7 +519,7 @@ class HidromoticClient:
         slot_id = entity["slot_id"]
         state = 1 if on else 0
         command = f"#@S{int_to_hex(slot_id)}M{state};"
-        
+
         await self._send_command(command)
 
     async def set_zone_state(self, zone_id: int, on: bool) -> None:

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-#from pyhidromotic import STATE_ON
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback

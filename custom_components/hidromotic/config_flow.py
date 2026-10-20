@@ -34,8 +34,12 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         if not await client.connect():
             raise CannotConnect
 
-        # Wait for initial data from device
-        await asyncio.sleep(INITIAL_DATA_WAIT_SECONDS)
+        # Espera dinámica en lugar de sleep estático
+        try:
+            await asyncio.wait_for(client.data_ready.wait(), timeout=INITIAL_DATA_WAIT_SECONDS)
+        except TimeoutError:
+            _LOGGER.error("Timeout esperando datos iniciales del dispositivo")
+            raise CannotConnect
 
         # Get device info
         device_id = client.data.get("pic_id", "unknown")

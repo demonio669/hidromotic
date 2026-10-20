@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import logging
 
-#from pyhidromotic import HidromoticClient
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, Platform
