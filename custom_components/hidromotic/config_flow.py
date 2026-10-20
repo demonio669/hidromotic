@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
@@ -13,9 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
-
 from .client import HidromoticClient, hex_to_int, int_to_hex
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -45,8 +44,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     finally:
         await client.disconnect()
 
-    return {"title": f"{name} ({data[CONF_HOST]})", "device_id": device_id}
-
+    # Convertimos explícitamente a string para evitar errores con async_set_unique_id
+    return {"title": f"{name} ({data[CONF_HOST]})", "device_id": str(device_id)}
 
 
 class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -62,7 +61,6 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                # 1. Primero nos conectamos para obtener la información del hardware
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -70,13 +68,17 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                # 2. Usamos el device_id (pic_id) como identificador único
-                await self.async_set_unique_id(info["device_id"])
+                device_id = info["device_id"]
 
-                # 3. Comprobamos si ya existe. Si la IP cambió, actualizamos la entrada existente.
+                # Fallback por si la placa tarda más de 2 segundos en enviar el pic_id inicial
+                if device_id == "unknown":
+                    _LOGGER.warning("No se pudo obtener el pic_id a tiempo, usando IP temporalmente")
+                    device_id = user_input[CONF_HOST]
+
+                # Asignamos el ID único correctamente
+                await self.async_set_unique_id(device_id)
                 self._abort_if_unique_id_configured(updates={CONF_HOST: user_input[CONF_HOST]})
 
-                # 4. Si es nuevo, creamos la entrada en Home Assistant
                 return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
