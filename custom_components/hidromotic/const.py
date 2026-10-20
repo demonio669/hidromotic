@@ -1,5 +1,4 @@
 """Constants for Hidromotic devices."""
-"""Constants for the Hidromotic integration."""
 
 DOMAIN = "hidromotic"
 

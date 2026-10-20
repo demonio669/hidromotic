@@ -28,13 +28,27 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
     client = HidromoticClient(data[CONF_HOST])
+    initial_data_event = asyncio.Event()
 
+    def _on_initial_data(_: dict[str, Any]) -> None:
+        """Callback para cuando lleguen los primeros datos."""
+        if not initial_data_event.is_set():
+            initial_data_event.set()
+
+    remove_callback = None
     try:
+        # Registramos un callback temporal para escuchar el primer paquete
+        remove_callback = client.register_callback(_on_initial_data)
+
         if not await client.connect():
             raise CannotConnect
 
-        # Wait for initial data from device
-        await asyncio.sleep(INITIAL_DATA_WAIT_SECONDS)
+        # Esperamos dinámicamente hasta recibir datos o agotar el tiempo
+        try:
+            async with asyncio.timeout(INITIAL_DATA_WAIT_SECONDS):
+                await initial_data_event.wait()
+        except TimeoutError:
+            _LOGGER.warning("Tiempo agotado esperando datos iniciales (pic_id) del dispositivo")
 
         # Get device info
         device_id = client.data.get("pic_id", "unknown")
@@ -42,9 +56,15 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         name = "CHI Smart Mini" if is_mini else "CHI Smart"
 
     finally:
+        # Limpiamos el callback de forma segura
+        if remove_callback:
+            try:
+                remove_callback()
+            except ValueError:
+                pass
         await client.disconnect()
 
-    # Convertimos explícitamente a string para evitar errores con async_set_unique_id
+    # Convertimos explícitamente a string
     return {"title": f"{name} ({data[CONF_HOST]})", "device_id": str(device_id)}
 
 
@@ -70,12 +90,9 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 device_id = info["device_id"]
 
-                # Fallback por si la placa tarda más de 2 segundos en enviar el pic_id inicial
                 if device_id == "unknown":
-                    _LOGGER.warning("No se pudo obtener el pic_id a tiempo, usando IP temporalmente")
                     device_id = user_input[CONF_HOST]
 
-                # Asignamos el ID único correctamente
                 await self.async_set_unique_id(device_id)
                 self._abort_if_unique_id_configured(updates={CONF_HOST: user_input[CONF_HOST]})
 

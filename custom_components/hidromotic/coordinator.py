@@ -7,17 +7,12 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
-
-
-
 from .client import HidromoticClient, hex_to_int, int_to_hex
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +33,8 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self._remove_callback: Callable[[], None] | None = None
+        # Creamos un evento para esperar el primer paquete de datos
+        self._initial_data_event = asyncio.Event()
 
     async def async_setup(self) -> bool:
         """Set up the coordinator."""
@@ -48,8 +45,13 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not await self.client.connect():
             return False
 
-        # Wait for initial data
-        await asyncio.sleep(INITIAL_DATA_WAIT_SECONDS)
+        # Esperamos dinámicamente hasta recibir datos o agotar el tiempo máximo
+        try:
+            async with asyncio.timeout(INITIAL_DATA_WAIT_SECONDS):
+                await self._initial_data_event.wait()
+        except TimeoutError:
+            _LOGGER.warning("Tiempo de espera agotado esperando datos iniciales del dispositivo Hidromotic")
+            return False
 
         # Set initial data
         self.async_set_updated_data(self.client.data)
@@ -61,9 +63,7 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 self._remove_callback()
             except ValueError:
-                # Ignora el error si el callback ya fue eliminado de la lista
                 pass
-            # Limpia la referencia para evitar ejecuciones duplicadas
             self._remove_callback = None
 
         await self.client.disconnect()
@@ -71,6 +71,10 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @callback
     def _on_data_update(self, data: dict[str, Any]) -> None:
         """Handle data update from WebSocket."""
+        # Activamos el evento cuando llega el primer paquete de datos
+        if not self._initial_data_event.is_set():
+            self._initial_data_event.set()
+
         self.async_set_updated_data(data)
 
     async def async_set_zone_state(self, zone_id: int, on: bool) -> None:
@@ -80,7 +84,6 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_set_tank_state(self, tank_id: int, on: bool) -> None:
         """Set tank state."""
         await self.client.set_tank_state(tank_id, on)
-
 
     async def async_set_pool_state(self, pool_id: int, on: bool) -> None:
         """Set pool state."""
@@ -114,11 +117,9 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Get all Mangueras."""
         return self.client.get_mangueras()
 
-
     def get_riegos(self) -> dict[int, dict[str, Any]]:
         """Get all Riegos."""
         return self.client.get_riegos()
-
 
     def get_pump(self) -> dict[str, Any]:
         """Get pump status."""
