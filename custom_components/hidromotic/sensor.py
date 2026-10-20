@@ -5,25 +5,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import (
-    DOMAIN,
-    PUMP_NO_WATER,
-    PUMP_OFF,
-    PUMP_ON,
-    PUMP_RECOVERY,
-    TANK_EMPTY,
-    TANK_FULL,
-    TANK_LEVEL_FAIL,
-    TANK_MEDIUM,
-    TANK_SENSOR_FAIL
-)
+from .const import DOMAIN, PUMP_NO_WATER, PUMP_OFF, PUMP_ON, PUMP_RECOVERY
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,11 +25,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up Hidromotic sensors from a config entry."""
     coordinator = entry.runtime_data
+
     entities: list[SensorEntity] = []
 
     # Add pump status sensor
     entities.append(HidromoticPumpSensor(coordinator, entry))
 
+    # Track which tanks we've added
     added_tanks: set[int] = set()
 
     @callback
@@ -59,8 +50,13 @@ async def async_setup_entry(
         if new_entities:
             async_add_entities(new_entities)
 
+    # Add initial entities
     async_add_entities(entities)
+
+    # Add initial tanks
     async_add_tank_sensors()
+
+    # Listen for updates to add new tanks dynamically
     entry.async_on_unload(coordinator.async_add_listener(async_add_tank_sensors))
 
 
@@ -69,8 +65,6 @@ class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntit
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:pump"
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["off", "on", "recovery", "no_water"]
 
     def __init__(
         self,
@@ -81,11 +75,11 @@ class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntit
         super().__init__(coordinator)
         self._entry = entry
 
-        self._attr_unique_id = f"{entry.unique_id}_pump_status"
+        self._attr_unique_id = f"{entry.entry_id}_pump_status"
         self._attr_name = "Pump status"
 
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.unique_id)},
+            identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
             model="CHI Smart Mini"
@@ -105,7 +99,7 @@ class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntit
             PUMP_RECOVERY: "recovery",
             PUMP_NO_WATER: "no_water",
         }
-        return status_map.get(estado, "unknown")
+        return status_map.get(estado, f"unknown_{estado}")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -124,8 +118,7 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
     """Sensor for tank level."""
 
     _attr_has_entity_name = True
-    _attr_device_class = SensorDeviceClass.ENUM
-    _attr_options = ["empty", "full", "sensor_fail", "level_fail", "medium"]
+    _attr_icon = "mdi:water-percent"
 
     def __init__(
         self,
@@ -139,11 +132,11 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
         self._tank_id = tank_id
         self._entry = entry
 
-        self._attr_unique_id = f"{entry.unique_id}_tank_{tank_id}_level"
+        self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_level"
         self._attr_translation_key = "tank_level"
 
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.unique_id)},
+            identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
             model="CHI Smart Mini"
@@ -165,28 +158,27 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
         if tank:
             nivel = tank.get("nivel", 0xFF)
             level_map = {
-                TANK_EMPTY: "empty",
-                TANK_FULL: "full",
-                TANK_SENSOR_FAIL: "sensor_fail",
-                TANK_LEVEL_FAIL: "level_fail",
-                TANK_MEDIUM: "medium",
+#                0: "full",
+#                1: "empty",
+                0: "empty",
+                1: "full",
+                2: "sensor_fail",
+                3: "level_fail",
+                4: "medium",
             }
             return level_map.get(nivel, "unknown")
         return "unknown"
 
     @property
     def icon(self) -> str:
-        """Return icon based on raw level."""
-        tanks = self.coordinator.get_tanks()
-        tank = tanks.get(self._tank_id)
-        if tank:
-            nivel = tank.get("nivel", 0xFF)
-            if nivel == TANK_FULL:
-                return "mdi:water"
-            if nivel == TANK_EMPTY:
-                return "mdi:water-off"
-            if nivel == TANK_MEDIUM:
-                return "mdi:water-percent"
-            if nivel in (TANK_SENSOR_FAIL, TANK_LEVEL_FAIL):
-                return "mdi:water-alert"
+        """Return icon based on level."""
+        value = self.native_value
+        if value == "full":
+            return "mdi:water"
+        if value == "empty":
+            return "mdi:water-off"
+        if value == "medium":
+            return "mdi:water-percent"
+        if value in ("sensor_fail", "level_fail"):
+            return "mdi:water-alert"
         return "mdi:water-percent"

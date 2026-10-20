@@ -15,14 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import (
-    DOMAIN,
-    TANK_EMPTY,
-    TANK_FULL,
-    TANK_LEVEL_FAIL,
-    TANK_MEDIUM,
-    TANK_SENSOR_FAIL
-)
+from .const import DOMAIN, TANK_EMPTY, TANK_FULL
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +29,7 @@ async def async_setup_entry(
     """Set up Hidromotic binary sensors from a config entry."""
     coordinator = entry.runtime_data
 
+    # Track which tanks we've added
     added_tanks: set[int] = set()
 
     @callback
@@ -44,9 +38,11 @@ async def async_setup_entry(
         tanks = coordinator.get_tanks()
         new_entities = []
 
+
         for tank_id, tank_data in tanks.items():
             if tank_id not in added_tanks:
                 added_tanks.add(tank_id)
+                # Add both "full" and "empty" sensors for each tank
                 new_entities.append(
                     HidromoticTankFullSensor(coordinator, entry, tank_id, tank_data)
                 )
@@ -57,7 +53,10 @@ async def async_setup_entry(
         if new_entities:
             async_add_entities(new_entities)
 
+    # Add initial tanks
     async_add_tank_sensors()
+
+    # Listen for updates to add new tanks dynamically
     entry.async_on_unload(coordinator.async_add_listener(async_add_tank_sensors))
 
 
@@ -82,17 +81,19 @@ class HidromoticTankFullSensor(
         self._entry = entry
 
         base_label = tank_data.get("label", f"Tank {tank_id + 1}")
-        self._attr_unique_id = f"{entry.unique_id}_tank_{tank_id}_full"
+        self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_full"
         self._attr_name = f"{base_label} Full"
 
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.unique_id)},
+            identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",
         )
+
+
 
     @property
     def available(self) -> bool:
@@ -101,7 +102,7 @@ class HidromoticTankFullSensor(
         tank = tanks.get(self._tank_id)
         if tank:
             nivel = tank.get("nivel", 0xFF)
-            return nivel != 0xFF and nivel not in (TANK_SENSOR_FAIL, TANK_LEVEL_FAIL) and super().available
+            return nivel != 0xFF and nivel not in (2, 3) and super().available
         return False
 
     @property
@@ -121,11 +122,11 @@ class HidromoticTankFullSensor(
         if tank:
             nivel = tank.get("nivel", 0xFF)
             level_map = {
-                TANK_EMPTY: "empty",
-                TANK_FULL: "full",
-                TANK_SENSOR_FAIL: "sensor_fail",
-                TANK_LEVEL_FAIL: "level_fail",
-                TANK_MEDIUM: "medium",
+                0: "empty",
+                1: "full",
+                2: "sensor_fail",
+                3: "level_fail",
+                4: "medium",
             }
             return {
                 "level_raw": nivel,
@@ -140,6 +141,7 @@ class HidromoticTankEmptySensor(
     """Binary sensor for tank empty status."""
 
     _attr_has_entity_name = True
+    #_attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
 
     def __init__(
@@ -155,11 +157,11 @@ class HidromoticTankEmptySensor(
         self._entry = entry
 
         base_label = tank_data.get("label", f"Tank {tank_id + 1}")
-        self._attr_unique_id = f"{entry.unique_id}_tank_{tank_id}_empty"
+        self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_empty"
         self._attr_name = f"{base_label} Empty"
 
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.unique_id)},
+            identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
             model="CHI Smart Mini"
@@ -167,23 +169,27 @@ class HidromoticTankEmptySensor(
             else "CHI Smart",
         )
 
+
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
+        _LOGGER.debug("tankaaa")
         if tank:
             nivel = tank.get("nivel", 0xFF)
-            return nivel != 0xFF and nivel not in (TANK_SENSOR_FAIL, TANK_LEVEL_FAIL) and super().available
+            return nivel != 0xFF and nivel not in (2, 3) and super().available
         return False
 
     @property
     def is_on(self) -> bool:
-        """Return true if the tank is empty."""
+        """Return true if the tank is empty (problem state)."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
+        _LOGGER.debug("tankaa: %s", tank)
+        #return True
         if tank:
-            return tank.get("nivel", 0xFF) == TANK_EMPTY
+            return tank.get("nivel", 0xFF) == TANK_FULL
         return False
 
     @property
@@ -194,11 +200,11 @@ class HidromoticTankEmptySensor(
         if tank:
             nivel = tank.get("nivel", 0xFF)
             level_map = {
-                TANK_EMPTY: "empty",
-                TANK_FULL: "full",
-                TANK_SENSOR_FAIL: "sensor_fail",
-                TANK_LEVEL_FAIL: "level_fail",
-                TANK_MEDIUM: "medium",
+                0: "empty",
+                1: "full",
+                2: "sensor_fail",
+                3: "level_fail",
+                4: "medium",
             }
             return {
                 "level_raw": nivel,
