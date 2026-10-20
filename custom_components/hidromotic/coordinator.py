@@ -7,7 +7,6 @@ from collections.abc import Callable
 import logging
 from typing import Any
 
-#from pyhidromotic import HidromoticClient
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -59,7 +58,14 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator."""
         if self._remove_callback:
-            self._remove_callback()
+            try:
+                self._remove_callback()
+            except ValueError:
+                # Ignora el error si el callback ya fue eliminado de la lista
+                pass
+            # Limpia la referencia para evitar ejecuciones duplicadas
+            self._remove_callback = None
+
         await self.client.disconnect()
 
     @callback
