@@ -288,8 +288,6 @@ class HidromoticClient:
         for idx in range(16, len(data)):
             if data[idx] == 0x42 and b_pos is None:  # 'B' - Bomba (Pump)
                 b_pos = idx
-         #   elif data[idx] == 0x52 and r_pos is None:  # 'R' - Riego Automático
-         #       r_pos = idx
             elif data[idx] == 0x53 and s_pos is None:  # 'S' - Slot/Output
                 s_pos = idx
                 break  # Found S marker, stop scanning
@@ -303,11 +301,6 @@ class HidromoticClient:
                 "pausa_externa": data[b_pos + 2],
             }
             _LOGGER.debug("Pump data: %s", self._data["pump"])
-
-        # Parse auto_riego state if 'R' section found
-        #if r_pos is not None and r_pos + 1 < len(data):
-        #    self._data["auto_riego"] = data[r_pos + 1] == 1
-        #    _LOGGER.debug("Auto riego state: %s", self._data["auto_riego"])
 
         # Parse outputs starting from 'S' marker
         if s_pos is None:
@@ -341,12 +334,7 @@ class HidromoticClient:
             is_manguera = 0x11 <= tipo <= 0x1C
             is_ciclon = 0x61 <= tipo <= 0x6C
 
-
-            #if is_tank :
-            #    _LOGGER.debug("ES TANQUE")
-
             if not (is_zone or is_tank or is_pileta or is_manguera or is_ciclon):
-                #i += 1
                 continue
 
             # Validate output structure
@@ -360,7 +348,6 @@ class HidromoticClient:
 
             # Sanity check
             if bomba > 1 or estado > STATE_DISABLED:
-                #i += 1
                 continue
 
             # Read label
@@ -388,8 +375,6 @@ class HidromoticClient:
                 automatico_tareas = data[i + 6 + label_len + 3  ] | (data[i + 6 + label_len + 4  ] << 8)
                 automatico_fin_tareas  = data[i + 6 + label_len + 5 ]
                 automatico_tiempo_bomba= data[i + 6 + label_len + 6 ]  | (data[i + 6 + label_len + 7  ] << 8)
-                # poe alguna causa, la pos 9 y pos 10 vuelven a repetir las pos 7 y 6 automatico_tiempo_bomba
-
 
             tipo_id = (tipo & 0x0F) - 1
 
@@ -415,18 +400,12 @@ class HidromoticClient:
 
             _LOGGER.debug("output data: %s",output_data)
 
-            # Move past this output
-            # Zones have 6-byte header, tanks have 9-byte header (3 extra bytes for nivel/modo/etc)
-            # Ciclon have 16-byte header
-
             header_size = 9 if is_tank else 6
             if is_ciclon:
                 header_size=16
 
             if estado == STATE_DISABLED:
                 header_size = 6
-
-
 
             i += header_size + label_len
             slot_id += 1
@@ -486,8 +465,6 @@ class HidromoticClient:
                     "automatico_tareas":  automatico_tareas,
                     "automatico_fin_tareas":  automatico_fin_tareas,
                     "automatico_tiempo_bomba":  automatico_tiempo_bomba,
-                    #"pos_6":  pos_6,
-                    #"pos_9":  pos_9,
                 }
 
         _LOGGER.debug(
@@ -500,11 +477,6 @@ class HidromoticClient:
             list(self._data["outputs"].keys()),
         )
 
-        _LOGGER.debug(self._data["outputs"])
-        _LOGGER.debug(self._data["ciclon"])
-
-
-
         for idx in range(i, len(data)):
             if data[idx] == 0x52 and r_pos is None:  # 'R' - Riego Automático
                 r_pos = idx
@@ -515,8 +487,6 @@ class HidromoticClient:
         if r_pos is not None and r_pos + 1 < len(data):
             self._data["auto_riego"] = data[r_pos + 1] == 1
             _LOGGER.debug("Auto riego state: %s", self._data["auto_riego"])
-
-
 
         header_size = 40
 
@@ -562,11 +532,6 @@ class HidromoticClient:
             _LOGGER.debug("i: %d , header_size:%d , tipo:%02x",i, header_size,tipo_riego)
         _LOGGER.debug("riegos: %s ",self._data["riegos"])
         _LOGGER.debug("Tanques: %s ",self._data["tanks"])
-
-
-
-
-
 
     async def _parse_running_data(self, data: bytes) -> None:
         """Parse running data update (command 'D')."""
@@ -627,98 +592,49 @@ class HidromoticClient:
                                 self._data["ciclon"][tipo_id]["estado"] = estado
 
                             break
-                    #for riego in self._data.get("riegos",{}).values():
-
                 i += 3
             elif section == "H":
                 if i + 2 < len(data):
                     riego_id = data[i + 1]
                     estado = data[i + 2]
 
-                    # Verificamos si el riego existe en nuestro diccionario y lo actualizamos
                     if riego_id in self._data.get("riegos", {}):
                         self._data["riegos"][riego_id]["estado"] = estado
                         _LOGGER.debug("Riego %s actualizado a estado %s", riego_id, estado)
 
-                # Incrementamos i en 3 (1 byte de 'H' + 1 byte de ID + 1 byte de estado)
                 i += 3
-
             else:
                 i += 1
 
-    async def set_zone_state(self, zone_id: int, on: bool) -> None:
-        """Turn a zone on or off.
-
-        Args:
-            zone_id: The zone ID to control.
-            on: True to turn on, False to turn off.
-        """
-        zone = self._data.get("zones", {}).get(zone_id)
-        if not zone:
-            _LOGGER.warning("Zone %d not found", zone_id)
+    async def _set_output_state(self, entity_type: str, entity_id: int, on: bool) -> None:
+        """Generic method to turn an output on or off."""
+        entity = self._data.get(entity_type, {}).get(entity_id)
+        if not entity:
+            _LOGGER.warning("%s %d not found", entity_type.capitalize(), entity_id)
             return
 
-        slot_id = zone["slot_id"]
+        slot_id = entity["slot_id"]
         state = 1 if on else 0
         command = f"#@S{int_to_hex(slot_id)}M{state};"
-        _LOGGER.debug("Setting zone %d (slot %d) to %s", zone_id, slot_id, state)
+        
+        _LOGGER.debug("Setting %s %d (slot %d) to %s", entity_type, entity_id, slot_id, state)
         await self._send_command(command)
+
+    async def set_zone_state(self, zone_id: int, on: bool) -> None:
+        """Turn a zone on or off."""
+        await self._set_output_state("zones", zone_id, on)
 
     async def set_tank_state(self, tank_id: int, on: bool) -> None:
-        """Turn a tank on or off.
-
-        Args:
-            tank_id: The tank ID to control.
-            on: True to start filling, False to stop filling.
-        """
-        tank = self._data.get("tanks", {}).get(tank_id)
-        if not tank:
-            _LOGGER.warning("Tank %d not found", tank_id)
-            return
-
-        slot_id = tank["slot_id"]
-        state = 1 if on else 0
-        command = f"#@S{int_to_hex(slot_id)}M{state};"
-        _LOGGER.debug("Setting tank %d (slot %d) to %s", tank_id, slot_id, state)
-        await self._send_command(command)
+        """Turn a tank on or off."""
+        await self._set_output_state("tanks", tank_id, on)
 
     async def set_pool_state(self, pool_id: int, on: bool) -> None:
-        """Turn a pool on or off.
-
-        Args:
-            pool_id: The pool ID to control.
-            on: True to start filling, False to stop filling.
-        """
-        pool = self._data.get("pools", {}).get(pool_id)
-        if not pool:
-            _LOGGER.warning("Pool %d not found", pool_id)
-            return
-
-        slot_id = pool["slot_id"]
-        state = 1 if on else 0
-        command = f"#@S{int_to_hex(slot_id)}M{state};"
-        _LOGGER.debug("Setting pool %d (slot %d) to %s", pool_id, slot_id, state)
-        await self._send_command(command)
-
+        """Turn a pool on or off."""
+        await self._set_output_state("pools", pool_id, on)
 
     async def set_manguera_state(self, manguera_id: int, on: bool) -> None:
-        """Turn a manguera on or off.
-
-        Args:
-            manguera_id: The manguera ID to control.
-            on: True to start filling, False to stop filling.
-        """
-        manguera = self._data.get("mangueras", {}).get(manguera_id)
-        if not manguera:
-            _LOGGER.warning("Manguera %d not found", manguera_id)
-            return
-
-        slot_id = manguera["slot_id"]
-        state = 1 if on else 0
-        command = f"#@S{int_to_hex(slot_id)}M{state};"
-        _LOGGER.debug("Setting manguera %d (slot %d) to %s", manguera_id, slot_id, state)
-        await self._send_command(command)
-
+        """Turn a manguera on or off."""
+        await self._set_output_state("mangueras", manguera_id, on)
 
     async def set_riego_state(self, riego_id: int, on: bool) -> None:
         """Turn a riego on or off.
@@ -737,7 +653,6 @@ class HidromoticClient:
         command = f"#@H{int_to_hex(slot_id)}M{state};"
         _LOGGER.debug("Setting riego %d (slot %d) to %s", riego_id, slot_id, state)
         await self._send_command(command)
-
 
     async def set_auto_riego(self, on: bool) -> None:
         """Enable or disable automatic irrigation.
@@ -780,7 +695,6 @@ class HidromoticClient:
     def get_riegos(self) -> dict[int, dict[str, Any]]:
         """Get all active reigos."""
         return self._data.get("riegos", {})
-
 
     def get_pump(self) -> dict[str, Any]:
         """Get pump status."""
