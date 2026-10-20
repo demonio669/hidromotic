@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
-
-#from pyhidromotic import HidromoticClient
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
@@ -50,6 +48,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     return {"title": f"{name} ({data[CONF_HOST]})", "device_id": device_id}
 
 
+
 class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Hidromotic."""
 
@@ -62,11 +61,8 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Check if already configured
-            await self.async_set_unique_id(user_input[CONF_HOST])
-            self._abort_if_unique_id_configured()
-
             try:
+                # 1. Primero nos conectamos para obtener la información del hardware
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -74,6 +70,13 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
+                # 2. Usamos el device_id (pic_id) como identificador único
+                await self.async_set_unique_id(info["device_id"])
+
+                # 3. Comprobamos si ya existe. Si la IP cambió, actualizamos la entrada existente.
+                self._abort_if_unique_id_configured(updates={CONF_HOST: user_input[CONF_HOST]})
+
+                # 4. Si es nuevo, creamos la entrada en Home Assistant
                 return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
