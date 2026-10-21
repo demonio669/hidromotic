@@ -35,8 +35,6 @@ async def async_setup_entry(
     """Set up Hidromotic binary sensors from a config entry."""
     coordinator = entry.runtime_data
 
-    # Conjuntos para rastrear qué componentes ya han sido añadidos
-    # y evitar registros duplicados durante actualizaciones por WebSocket.
     added_tanks: set[int] = set()
     added_inputs: set[int] = set()
 
@@ -52,7 +50,6 @@ async def async_setup_entry(
         for tank_id, tank_data in tanks.items():
             if tank_id not in added_tanks:
                 added_tanks.add(tank_id)
-                # Se agregan ambas entidades (Lleno y Vacío) por cada tanque
                 new_entities.append(
                     HidromoticTankFullSensor(coordinator, entry, tank_id, tank_data)
                 )
@@ -65,21 +62,16 @@ async def async_setup_entry(
         # ------------------------------------------------------------------
         inputs = coordinator.client.data.get("inputs", {})
         for input_id, input_data in inputs.items():
-            # Solo creamos la entidad si la entrada física está configurada (tipo != 0)
             if input_id not in added_inputs and input_data.get("tipo", 0) != 0:
                 added_inputs.add(input_id)
                 new_entities.append(
                     HidromoticPhysicalInputSensor(coordinator, entry, input_id, input_data)
                 )
 
-        # Si hay nuevas entidades descubiertas, las registramos en Home Assistant
         if new_entities:
             async_add_entities(new_entities)
 
-    # Registro inicial al cargar la integración
     async_add_binary_sensors()
-
-    # Escuchamos actualizaciones del coordinador para detectar cambios en caliente
     entry.async_on_unload(coordinator.async_add_listener(async_add_binary_sensors))
 
 
@@ -90,11 +82,7 @@ async def async_setup_entry(
 class HidromoticTankBaseBinarySensor(
     CoordinatorEntity[HidromoticCoordinator], BinarySensorEntity
 ):
-    """Base representation of a Hidromotic tank binary sensor.
-
-    Agrupa la lógica común de disponibilidad, atributos e información
-    del dispositivo para los sensores binarios de tanque.
-    """
+    """Base representation of a Hidromotic tank binary sensor."""
 
     _attr_has_entity_name = True
     _attr_device_class = BinarySensorDeviceClass.MOISTURE
@@ -115,11 +103,9 @@ class HidromoticTankBaseBinarySensor(
 
         base_label = tank_data.get("label") or f"Tanque {tank_id + 1}"
 
-        # Identificador único en la base de datos de Home Assistant
         self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_{sensor_type}"
         self._attr_name = f"{base_label} {name_suffix}"
 
-        # Vinculación de la entidad con el dispositivo central
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
@@ -131,10 +117,7 @@ class HidromoticTankBaseBinarySensor(
 
     @property
     def available(self) -> bool:
-        """Return True if the entity is available.
-
-        Verifica que el tanque exista en la trama y que su lectura no marque error.
-        """
+        """Return True if the entity is available."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
         if tank:
@@ -165,14 +148,12 @@ class HidromoticTankFullSensor(HidromoticTankBaseBinarySensor):
         tank_id: int,
         tank_data: dict[str, Any],
     ) -> None:
-        """Initialize the full sensor."""
         super().__init__(
             coordinator, entry, tank_id, tank_data, sensor_type="full", name_suffix="Lleno"
         )
 
     @property
     def is_on(self) -> bool:
-        """Return True if the tank level matches TANK_FULL."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
         if tank:
@@ -190,14 +171,12 @@ class HidromoticTankEmptySensor(HidromoticTankBaseBinarySensor):
         tank_id: int,
         tank_data: dict[str, Any],
     ) -> None:
-        """Initialize the empty sensor."""
         super().__init__(
             coordinator, entry, tank_id, tank_data, sensor_type="empty", name_suffix="Vacío"
         )
 
     @property
     def is_on(self) -> bool:
-        """Return True if the tank matches the configured empty condition."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
         if tank:
@@ -232,7 +211,6 @@ class HidromoticPhysicalInputSensor(
         self._attr_unique_id = f"{entry.entry_id}_input_{input_id}"
         self._attr_name = f"Entrada {input_id + 1} ({tipo_name})"
 
-        # Asignación de clase de dispositivo estándar válida en Home Assistant
         tipo = input_data.get("tipo", 0)
         if tipo in (1, 2):  # Detector de agua (1) y Sensor de lluvia (2)
             self._attr_device_class = BinarySensorDeviceClass.MOISTURE
@@ -258,7 +236,7 @@ class HidromoticPhysicalInputSensor(
 
     @property
     def is_on(self) -> bool:
-        """Return True if physical input is active."""
+        """Return True if physical input is active, taking inversion into account."""
         inputs = self.coordinator.client.data.get("inputs", {})
         inp = inputs.get(self._input_id)
         if inp:
@@ -275,5 +253,5 @@ class HidromoticPhysicalInputSensor(
             "tipo_id": inp.get("tipo"),
             "tipo_function": inp.get("tipo_name"),
             "inverted": inp.get("invert", False),
-            "raw_state": inp.get("actual"),
+            "raw_state": inp.get("raw_estado", False),
         }

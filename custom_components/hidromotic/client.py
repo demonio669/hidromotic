@@ -345,22 +345,27 @@ class HidromoticClient:
                 "marcha": marcha,
             }
 
+        # Parseo de Entradas Físicas Digitales ('E') considerando la inversión lógica
         if e_pos is not None:
             idx = e_pos + 1
             for j in range(4):
                 if idx + 3 < len(data):
                     tipo = data[idx]
-                    invert = data[idx + 1]
+                    invert = data[idx + 1] == 1
                     actual = data[idx + 2]
-                    estado = data[idx + 3]
+                    raw_estado = data[idx + 3] == 1
+
+                    # Se calcula el estado efectivo contemplando la inversión lógica
+                    effective_state = raw_estado ^ invert
 
                     self._data["inputs"][j] = {
                         "id": j,
                         "tipo": tipo,
                         "tipo_name": INPUT_TYPE_MAP.get(tipo, f"Tipo {tipo}"),
-                        "invert": invert == 1,
+                        "invert": invert,
                         "actual": actual,
-                        "estado": estado == 1,
+                        "raw_estado": raw_estado,
+                        "estado": effective_state,
                     }
                     idx += 4
 
@@ -599,9 +604,13 @@ class HidromoticClient:
             elif section == "E":
                 if i + 2 < len(data):
                     input_id = data[i + 1]
-                    estado = data[i + 2]
-                    if input_id in self._data.get("inputs", {}):
-                        self._data["inputs"][input_id]["estado"] = estado == 1
+                    raw_estado = data[i + 2] == 1
+                    inp = self._data.get("inputs", {}).get(input_id)
+                    if inp:
+                        invert = inp.get("invert", False)
+                        inp["raw_estado"] = raw_estado
+                        # Aplica la inversión lógica en la actualización en vivo
+                        inp["estado"] = raw_estado ^ invert
                 i += 3
 
             elif section == "R":
