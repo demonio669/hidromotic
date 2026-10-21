@@ -11,11 +11,10 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+from .client import HidromoticClient
 from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
-
-from .client import HidromoticClient, hex_to_int, int_to_hex
-
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,20 +27,19 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
-    client = HidromoticClient(data[CONF_HOST])
+    session = async_get_clientsession(hass)
+    client = HidromoticClient(data[CONF_HOST], session=session)
 
     try:
         if not await client.connect():
             raise CannotConnect
 
-        # Espera dinámica en lugar de sleep estático
         try:
             await asyncio.wait_for(client.data_ready.wait(), timeout=INITIAL_DATA_WAIT_SECONDS)
         except TimeoutError:
             _LOGGER.error("Timeout esperando datos iniciales del dispositivo")
             raise CannotConnect
 
-        # Get device info
         device_id = client.data.get("pic_id", "unknown")
         is_mini = client.data.get("is_mini", False)
         name = "CHI Smart Mini" if is_mini else "CHI Smart"
@@ -50,7 +48,6 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         await client.disconnect()
 
     return {"title": f"{name} ({data[CONF_HOST]})", "device_id": device_id}
-
 
 
 class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -66,7 +63,6 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             try:
-                # 1. Primero nos conectamos para obtener la información del hardware
                 info = await validate_input(self.hass, user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
@@ -74,13 +70,8 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                # 2. Usamos el device_id (pic_id) como identificador único
                 await self.async_set_unique_id(info["device_id"])
-
-                # 3. Comprobamos si ya existe. Si la IP cambió, actualizamos la entrada existente.
                 self._abort_if_unique_id_configured(updates={CONF_HOST: user_input[CONF_HOST]})
-
-                # 4. Si es nuevo, creamos la entrada en Home Assistant
                 return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(

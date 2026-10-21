@@ -10,7 +10,6 @@ from typing import Any
 
 import aiohttp
 
-# Importación de constantes de tipos de salida, estados y niveles de tanque
 from .const import (
     OUTPUT_TYPE_CICLON,
     OUTPUT_TYPE_MANGUERA,
@@ -27,13 +26,26 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Mapeo oficial de funciones para las 4 Entradas Físicas Digitales (E0 - E3)
+INPUT_TYPE_MAP = {
+    0: "Ninguna",
+    1: "Detector de agua",
+    2: "Sensor de Lluvia",
+    3: "Tanque 1 vacío",
+    4: "Tanque 1 lleno",
+    5: "Tanque 2 vacío",
+    6: "Tanque 2 lleno",
+    7: "Tanque 3 vacío",
+    8: "Tanque 3 lleno",
+    9: "Tanque 4 vacío",
+    10: "Tanque 4 lleno",
+    11: "Pausa-SÍ",
+    12: "Pausa-NO",
+}
 
-# -------------------------------------------------------------------
-# Funciones Auxiliares de Conversión
-# -------------------------------------------------------------------
 
 def hex_to_int(h: str) -> int:
-    """Convierte un carácter hexadecimal a entero (soporta A, B, C como 10, 11, 12)."""
+    """Convierte un carácter hexadecimal a entero."""
     if h == "A":
         return 10
     if h == "B":
@@ -44,7 +56,7 @@ def hex_to_int(h: str) -> int:
 
 
 def int_to_hex(i: int) -> str:
-    """Convierte un entero a carácter hexadecimal (soporta 10, 11, 12 como A, B, C)."""
+    """Convierte un entero a carácter hexadecimal."""
     if i == 10:
         return "A"
     if i == 11:
@@ -54,14 +66,10 @@ def int_to_hex(i: int) -> str:
     return str(i)
 
 
-# -------------------------------------------------------------------
-# Cliente WebSocket Principal
-# -------------------------------------------------------------------
-
 class HidromoticClient:
     """Cliente WebSocket asíncrono para la comunicación con la controladora Hidromotic."""
 
-    RECONNECT_INTERVAL = 30  # Intervalo de reintento de conexión en segundos
+    RECONNECT_INTERVAL = 30
 
     def __init__(
         self,
@@ -72,28 +80,25 @@ class HidromoticClient:
         self.host = host
         self._ws: aiohttp.ClientWebSocketResponse | None = None
         self._session = session
-        self._owns_session = session is None  # Indica si el cliente gestiona su propia sesión HTTP
-        self._callbacks: list[Callable[[dict[str, Any]], None]] = []  # Suscriptores a eventos de actualización
+        self._owns_session = session is None
+        self._callbacks: list[Callable[[dict[str, Any]], None]] = []
         self._connected = False
         self._should_reconnect = True
         self._reconnect_task: asyncio.Task[None] | None = None
         self._listener_task: asyncio.Task[None] | None = None
-        self._data: dict[str, Any] = {}
+        self._data: dict[str, Any] = {"c_msg": 0}
 
-        # Evento asíncrono para indicar cuándo se recibieron los datos iniciales de configuración ('C')
         self.data_ready = asyncio.Event()
-
-        # Cerrojo de asincronía para evitar condiciones de carrera al enviar comandos o mutar self._data
         self._lock = asyncio.Lock()
 
     @property
     def connected(self) -> bool:
-        """Retorna True si el WebSocket está conectado."""
+        """Retorna True si el WebSocket está actualmente conectado."""
         return self._connected
 
     @property
     def data(self) -> dict[str, Any]:
-        """Retorna el diccionario con la estructura actual de datos del dispositivo."""
+        """Retorna el diccionario estructurado con los datos del dispositivo."""
         return self._data
 
     def register_callback(
@@ -101,11 +106,10 @@ class HidromoticClient:
     ) -> Callable[[], None]:
         """Registra un callback para notificar cambios de estado a Home Assistant."""
         self._callbacks.append(callback)
-        # Retorna una función lambda para desuscubrir el callback fácilmente
         return lambda: self._callbacks.remove(callback)
 
     async def connect(self) -> bool:
-        """Establece la conexión WebSocket con el endpoint /rpc de la controladora."""
+        """Establece la conexión WebSocket con la controladora."""
         try:
             if self._session is None:
                 self._session = aiohttp.ClientSession()
@@ -117,12 +121,9 @@ class HidromoticClient:
             self._connected = True
             _LOGGER.info("Connected to Hidromotic at %s", self.host)
 
-            # Inicia la tarea en segundo plano para escuchar los mensajes entrantes
             self._listener_task = asyncio.create_task(self._listen())
 
-            # Envía comando de handshake/inicio y solicita la configuración completa (#@C;)
             await self._send_command("e")
-            await asyncio.sleep(1)
             await self._send_command("#@C;")
         except Exception as err:
             _LOGGER.error("Failed to connect to Hidromotic: %s", err)
@@ -132,12 +133,11 @@ class HidromoticClient:
             return True
 
     async def disconnect(self) -> None:
-        """Cierra de forma limpia la conexión WebSocket y libera las tareas asíncronas."""
+        """Cierra la conexión WebSocket y cancela las tareas activas."""
         self._should_reconnect = False
         self._connected = False
         self.data_ready.clear()
 
-        # Cancelación de tareas activas de reconexión y escucha
         if self._reconnect_task:
             self._reconnect_task.cancel()
             try:
@@ -157,13 +157,12 @@ class HidromoticClient:
             self._session = None
 
     async def _send_command(self, command: str) -> None:
-        """Empaqueta y envía un comando en formato JSON-RPC sobre el WebSocket."""
+        """Envía un comando en formato JSON-RPC al WebSocket."""
         if not self._ws or self._ws.closed:
             _LOGGER.warning("Cannot send command, not connected")
             return
 
         async with self._lock:
-            # Selecciona el formato adecuado según el prefijo del comando
             if command.startswith("#"):
                 payload = f'{{"method":"hdmt","params":{{"c":"{command}"}}}}'
             else:
@@ -172,21 +171,20 @@ class HidromoticClient:
             _LOGGER.debug("Sending command: %s", payload)
 
             try:
-                # Timeout de seguridad para evitar bloqueos si falla la red
                 await asyncio.wait_for(self._ws.send_str(payload), timeout=5.0)
             except TimeoutError:
-                _LOGGER.error("Timeout sending command to Hidromotic. Disconnecting to force recovery.")
-                await self._ws.close()
+                _LOGGER.error("Timeout sending command '%s' to Hidromotic", command)
             except Exception as err:
                 _LOGGER.error("Error sending command to Hidromotic: %s", err)
 
     async def _listen(self) -> None:
-        """Bucle continuo para consumir los mensajes recibidos desde el WebSocket."""
+        """Bucle principal para procesar los mensajes recibidos."""
         if not self._ws:
             return
 
         try:
             async for msg in self._ws:
+                self._data["c_msg"] = self._data.get("c_msg", 0) + 1
                 if msg.type == aiohttp.WSMsgType.BINARY:
                     await self._process_binary(msg.data)
                 elif msg.type == aiohttp.WSMsgType.TEXT:
@@ -203,12 +201,12 @@ class HidromoticClient:
             _LOGGER.error("Error in WebSocket listener: %s", err)
         finally:
             self._connected = False
-            self.data_ready.clear()  # Resetea el estado de datos listos al desconectarse
+            self.data_ready.clear()
             if self._should_reconnect:
                 self._reconnect_task = asyncio.create_task(self._reconnect())
 
     async def _reconnect(self) -> None:
-        """Gestiona el bucle de reintentos periódicos de reconexión."""
+        """Bucle para gestionar los reintentos automáticos de reconexión."""
         self.data_ready.clear()
         while self._should_reconnect and not self._connected:
             _LOGGER.info(
@@ -226,49 +224,89 @@ class HidromoticClient:
                 _LOGGER.debug("Reconnection attempt failed: %s", err)
 
     async def _process_text(self, data: str) -> None:
-        """Procesa respuestas en formato texto (JSON)."""
+        """Procesa respuestas recibidas en formato JSON extrayendo información del sistema."""
         try:
             parsed = json.loads(data)
             _LOGGER.debug("Received JSON: %s", parsed)
+
+            if isinstance(parsed, dict):
+                result = parsed.get("result", parsed)
+                if isinstance(result, dict):
+                    if "id" in result:
+                        self._data["device_id"] = result.get("id")
+                    if "fw_version" in result:
+                        self._data["fw_version_esp"] = result.get("fw_version")
+                    if "ota" in result:
+                        self._data["ota"] = result.get("ota")
+                    if "uptime" in result:
+                        self._data["uptime"] = result.get("uptime", 0)
+                    if "mac" in result:
+                        self._data["mac"] = result.get("mac", "unknown")
+
+                    wifi_data = result.get("wifi", {}).get("sta", {})
+                    if "ssid" in wifi_data:
+                        self._data["wifi_ssid"] = wifi_data.get("ssid")
+                    if "ip" in wifi_data:
+                        self._data["wifi_ip"] = wifi_data.get("ip")
+                    if "rssi" in wifi_data:
+                        rssi = wifi_data.get("rssi", -100)
+                        if rssi == 0 or rssi <= -100:
+                            signal = 0
+                        elif rssi >= -50:
+                            signal = 100
+                        else:
+                            signal = 2 * (rssi + 100)
+                        self._data["wifi_signal"] = signal
+                    if "routertime" in wifi_data:
+                        self._data["wifi_routertime"] = wifi_data.get("routertime", 0)
         except json.JSONDecodeError:
             _LOGGER.debug("Non-JSON text received: %s", data)
 
     async def _process_binary(self, data: bytes) -> None:
-        """Procesa paquetes de datos binarios garantizando exclusión mutua mediante Lock."""
+        """Procesa tramas de datos binarios garantizando exclusión mutua."""
         if len(data) < 2:
             return
 
-        cmd = chr(data[0])  # Primer byte indica el tipo de comando ('C' o 'D')
-        _LOGGER.debug("Processing binary command: %s, length: %d, data:%s", cmd, len(data), data)
+        cmd = chr(data[0])
+        _LOGGER.debug("Processing binary command: %s, length: %d", cmd, len(data))
 
-        # Protege el parseo para evitar que dos tramas modifiquen self._data al mismo tiempo
         async with self._lock:
             if cmd == "C":
                 await self._parse_full_config(data)
             elif cmd == "D":
                 await self._parse_running_data(data)
 
-        # Notifica a Home Assistant sobre los nuevos datos parseados
         for callback in self._callbacks:
             try:
                 callback(self._data)
             except Exception as err:
                 _LOGGER.error("Error in callback: %s", err)
 
-    # -------------------------------------------------------------------
-    # Parseo de Trama Binaria de Configuración Completa ('C')
-    # -------------------------------------------------------------------
-
     async def _parse_full_config(self, data: bytes) -> None:
-        """Parsea la trama binaria inicial con la configuración general de salidas."""
-        is_mini = data[1] == 77  # 'M' ASCII = 77 (Placa Mini de 6 salidas)
+        """Parsea la trama binaria inicial con la configuración completa del sistema."""
+        is_mini = data[1] == 77
         max_outputs = 6 if is_mini else 12
 
         self._data["is_mini"] = is_mini
+        self._data["pic_name"] = "CHI Smart Mini" if is_mini else "CHI Smart"
         self._data["pic_version"] = data[2] | (data[3] << 8)
         self._data["pic_id"] = f"0x{data[6]:02X}"
+        self._data["pic_rev"] = data[7] if len(data) > 7 else 0
 
-        # Estructura de colecciones internas
+        # Sincronización BCD de Fecha PIC
+        if len(data) >= 16:
+            bcd_to_hex = lambda v: (((v & 0xF0) >> 4) * 10) + (v & 0x0F)
+            try:
+                year = 2000 + bcd_to_hex(data[10])
+                month = bcd_to_hex(data[9])
+                day = bcd_to_hex(data[12])
+                hour = bcd_to_hex(data[14])
+                minute = bcd_to_hex(data[13])
+                second = bcd_to_hex(data[15])
+                self._data["pic_fecha"] = f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
+            except Exception:
+                self._data["pic_fecha"] = "unknown"
+
         self._data["zones"] = {}
         self._data["tanks"] = {}
         self._data["pools"] = {}
@@ -276,35 +314,55 @@ class HidromoticClient:
         self._data["ciclon"] = {}
         self._data["pump"] = {}
         self._data["riegos"] = {}
+        self._data["inputs"] = {}
         self._data["outputs"] = {}
-
-        # Índice optimizado O(1) para buscar rápidamente por tipo de salida
         self._data["outputs_by_tipo"] = {}
-
-        etc = ""
-        nivel = ""
-        modo = ""
 
         if "auto_riego" not in self._data:
             self._data["auto_riego"] = True
 
-        # Búsqueda de marcadores de sección binarios ('B' para Bomba, 'S' para Salidas)
-        b_pos = None
-        s_pos = None
-        r_pos = None
+        b_pos, s_pos, e_pos, r_pos = None, None, None, None
+
         for idx in range(16, len(data)):
             if data[idx] == 0x42 and b_pos is None:
                 b_pos = idx
+            elif data[idx] == 0x45 and e_pos is None:
+                e_pos = idx
             elif data[idx] == 0x53 and s_pos is None:
                 s_pos = idx
                 break
 
-        # Lectura del estado de la bomba
-        if b_pos is not None and b_pos + 2 < len(data):
+        if b_pos is not None and b_pos + 6 < len(data):
+            marcha = (
+                data[b_pos + 3]
+                | (data[b_pos + 4] << 8)
+                | (data[b_pos + 5] << 16)
+                | (data[b_pos + 6] << 24)
+            )
             self._data["pump"] = {
                 "estado": data[b_pos + 1],
                 "pausa_externa": data[b_pos + 2],
+                "marcha": marcha,
             }
+
+        if e_pos is not None:
+            idx = e_pos + 1
+            for j in range(4):
+                if idx + 3 < len(data):
+                    tipo = data[idx]
+                    invert = data[idx + 1]
+                    actual = data[idx + 2]
+                    estado = data[idx + 3]
+
+                    self._data["inputs"][j] = {
+                        "id": j,
+                        "tipo": tipo,
+                        "tipo_name": INPUT_TYPE_MAP.get(tipo, f"Tipo {tipo}"),
+                        "invert": invert == 1,
+                        "actual": actual,
+                        "estado": estado == 1,
+                    }
+                    idx += 4
 
         if s_pos is None:
             _LOGGER.warning("No 'S' section marker found in config data")
@@ -313,17 +371,14 @@ class HidromoticClient:
         i = s_pos + 1
         slot_id = 0
 
-        # Bucle de parseo para las salidas físicas de la placa
         while i < len(data) - 6 and slot_id < max_outputs:
             tipo = data[i]
 
-            # Slot vacío / no configurado
             if tipo == 0x00:
                 i += 6
                 slot_id += 1
                 continue
 
-            # Determinación del tipo de hardware conectado a la salida
             is_zone = 0x41 <= tipo <= 0x4C
             is_tank = 0x21 <= tipo <= 0x2C
             is_pileta = 0x51 <= tipo <= 0x5C
@@ -346,7 +401,6 @@ class HidromoticClient:
                 i += 1
                 continue
 
-            # Extracción del nombre personalizado (etiqueta) de la salida
             label = ""
             if 0 < label_len <= 32 and i + 6 + label_len <= len(data):
                 try:
@@ -357,15 +411,21 @@ class HidromoticClient:
             else:
                 label_len = 0
 
-            # Lectura de parámetros específicos para tanques
-            if is_tank and not (estado == STATE_DISABLED):
+            modo, etc, nivel = 0, 0, 0
+            automatico_tareas_enabled = 0
+            automatico_fin_tareas_enabled = 0
+            automatico_tiempo_bomba_enabled = 0
+            automatico_tareas = 0
+            automatico_fin_tareas = 0
+            automatico_tiempo_bomba = 0
+
+            if is_tank and estado != STATE_DISABLED:
                 if i + 6 + label_len + 2 < len(data):
                     modo = data[i + 6 + label_len]
                     etc = data[i + 6 + label_len + 1]
                     nivel = data[i + 6 + label_len + 2]
 
-            # Lectura de parámetros específicos para ciclones
-            if is_ciclon and not (estado == STATE_DISABLED):
+            if is_ciclon and estado != STATE_DISABLED:
                 if i + 6 + label_len + 7 < len(data):
                     automatico_tareas_enabled = data[i + 6 + label_len]
                     automatico_fin_tareas_enabled = data[i + 6 + label_len + 1]
@@ -400,17 +460,15 @@ class HidromoticClient:
             if estado == STATE_DISABLED:
                 continue
 
-            # Guardado en colecciones generales e índice directo
             self._data["outputs"][slot_id] = output_data
             self._data["outputs_by_tipo"][tipo] = output_data
 
-            # Guardado en colecciones especializadas
             if is_zone:
                 self._data["zones"][tipo_id] = {
                     "id": tipo_id,
                     "slot_id": output_data["slot_id"],
                     "estado": estado,
-                    "label": label or f"Zone {tipo_id + 1}",
+                    "label": label or f"Zona {tipo_id + 1}",
                     "duracion": duracion,
                 }
             elif is_tank:
@@ -418,7 +476,7 @@ class HidromoticClient:
                     "id": tipo_id,
                     "slot_id": output_data["slot_id"],
                     "estado": estado,
-                    "label": label or f"Tank {tipo_id + 1}",
+                    "label": label or f"Tanque {tipo_id + 1}",
                     "nivel": nivel,
                     "modo": modo,
                     "etc": etc,
@@ -428,7 +486,7 @@ class HidromoticClient:
                     "id": tipo_id,
                     "slot_id": output_data["slot_id"],
                     "estado": estado,
-                    "label": label or f"Pool {tipo_id + 1}",
+                    "label": label or f"Piscina {tipo_id + 1}",
                     "duracion": duracion,
                 }
             elif is_manguera:
@@ -446,38 +504,57 @@ class HidromoticClient:
                     "estado": estado,
                     "label": label or f"Ciclon {tipo_id + 1}",
                     "duracion": duracion,
-                    "automatico_tareas_enabled": locals().get("automatico_tareas_enabled", 0),
-                    "automatico_fin_tareas_enabled": locals().get("automatico_fin_tareas_enabled", 0),
-                    "automatico_tiempo_bomba_enabled": locals().get("automatico_tiempo_bomba_enabled", 0),
-                    "automatico_tareas": locals().get("automatico_tareas", 0),
-                    "automatico_fin_tareas": locals().get("automatico_fin_tareas", 0),
-                    "automatico_tiempo_bomba": locals().get("automatico_tiempo_bomba", 0),
+                    "automatico_tareas_enabled": automatico_tareas_enabled,
+                    "automatico_fin_tareas_enabled": automatico_fin_tareas_enabled,
+                    "automatico_tiempo_bomba_enabled": automatico_tiempo_bomba_enabled,
+                    "automatico_tareas": automatico_tareas,
+                    "automatico_fin_tareas": automatico_fin_tareas,
+                    "automatico_tiempo_bomba": automatico_tiempo_bomba,
                 }
 
-        # Búsqueda de la sección 'R' (Auto Riego)
         for idx in range(i, len(data)):
             if data[idx] == 0x52 and r_pos is None:
                 r_pos = idx
-                break
+            elif data[idx] == 0x62 and "bateria" not in self._data:
+                if idx + 2 < len(data):
+                    self._data["bateria"] = data[idx + 1] | (data[idx + 2] << 8)
 
         if r_pos is not None and r_pos + 1 < len(data):
             self._data["auto_riego"] = data[r_pos + 1] == 1
 
-        # Parseo de programas de riego automáticos
-        header_size = 40
+        riego_header_size = 28 if is_mini else 40
+        max_riego_zonas = 6 if is_mini else 12
+
         while i < len(data):
             tipo_riego = data[i]
 
             if tipo_riego != 0x48:
-                i += header_size
+                i += 1
                 continue
 
-            if i + 38 < len(data):
+            if i + (26 if is_mini else 38) < len(data):
                 riego_id = data[i + 1]
                 riego_estado = data[i + 2]
                 riego_enabled = data[i + 10]
-                riego_label = "Riego " + chr(65 + riego_id)
+                riego_label = f"Riego {chr(65 + riego_id)}"
                 riego_use_sensor_lluvia = data[i + 9]
+
+                zonas_duracion = {}
+                for z_idx in range(max_riego_zonas):
+                    pos = i + 15 + (z_idx * 2)
+                    if pos + 1 < len(data):
+                        zonas_duracion[f"duracion_{z_idx + 1}"] = data[pos] | (data[pos + 1] << 8)
+
+                label_offset = i + (26 if is_mini else 38) + 1
+                if label_offset < len(data) and data[label_offset] > 0:
+                    custom_label_len = data[label_offset]
+                    if label_offset + 1 + custom_label_len <= len(data):
+                        try:
+                            custom_label = data[label_offset + 1 : label_offset + 1 + custom_label_len].decode("utf-8", errors="ignore")
+                            if custom_label.strip():
+                                riego_label = custom_label
+                        except UnicodeDecodeError:
+                            pass
 
                 self._data["riegos"][riego_id] = {
                     "id": riego_id,
@@ -486,56 +563,58 @@ class HidromoticClient:
                     "enabled": riego_enabled,
                     "label": riego_label,
                     "use_sensor_lluvia": riego_use_sensor_lluvia,
-                    "duracion_1": data[i + 15] | (data[i + 16] << 8),
-                    "duracion_2": data[i + 17] | (data[i + 18] << 8),
-                    "duracion_3": data[i + 19] | (data[i + 20] << 8),
-                    "duracion_4": data[i + 21] | (data[i + 22] << 8),
-                    "duracion_5": data[i + 23] | (data[i + 24] << 8),
-                    "duracion_6": data[i + 25] | (data[i + 26] << 8),
-                    "duracion_7": data[i + 27] | (data[i + 28] << 8),
-                    "duracion_8": data[i + 29] | (data[i + 30] << 8),
-                    "duracion_9": data[i + 31] | (data[i + 32] << 8),
-                    "duracion_10": data[i + 33] | (data[i + 34] << 8),
-                    "duracion_11": data[i + 35] | (data[i + 36] << 8),
-                    "duracion_12": data[i + 37] | (data[i + 38] << 8),
+                    "zonas": zonas_duracion,
                 }
 
-            i += header_size
+            i += riego_header_size
 
-        # Dispara el evento notificando que la configuración completa terminó de cargarse
         self.data_ready.set()
 
-    # -------------------------------------------------------------------
-    # Parseo de Trama Binaria de Datos en Tiempo Real ('D')
-    # -------------------------------------------------------------------
-
     async def _parse_running_data(self, data: bytes) -> None:
-        """Parsea actualizaciones de estado diferidas o en tiempo real."""
+        """Parsea actualizaciones parciales en tiempo real enviadas por la placa."""
         i = 6
         while i < len(data):
             section = chr(data[i])
 
-            # Actualización de Bomba
             if section == "B":
-                if i + 2 < len(data):
+                if i + 6 < len(data):
+                    self._data["pump"]["estado"] = data[i + 1]
+                    self._data["pump"]["pausa_externa"] = data[i + 2]
+                    self._data["pump"]["marcha"] = (
+                        data[i + 3]
+                        | (data[i + 4] << 8)
+                        | (data[i + 5] << 16)
+                        | (data[i + 6] << 24)
+                    )
+                elif i + 2 < len(data):
                     self._data["pump"]["estado"] = data[i + 1]
                     self._data["pump"]["pausa_externa"] = data[i + 2]
                 i += 6
 
-            # Actualización de Auto Riego
+            elif section == "b":
+                if i + 2 < len(data):
+                    self._data["bateria"] = data[i + 1] | (data[i + 2] << 8)
+                i += 2
+
+            elif section == "E":
+                if i + 2 < len(data):
+                    input_id = data[i + 1]
+                    estado = data[i + 2]
+                    if input_id in self._data.get("inputs", {}):
+                        self._data["inputs"][input_id]["estado"] = estado == 1
+                i += 3
+
             elif section == "R":
                 if i + 1 < len(data):
                     self._data["auto_riego"] = data[i + 1] == 1
                 i += 2
 
-            # Actualización de Estado de Salidas (Switches)
             elif section == "S":
                 step = 3
                 if i + 2 < len(data):
                     tipo = data[i + 1]
                     estado = data[i + 2]
 
-                    # Búsqueda directa O(1) usando el índice creado en 'C'
                     output = self._data.get("outputs_by_tipo", {}).get(tipo)
                     if output:
                         output["estado"] = estado
@@ -548,7 +627,7 @@ class HidromoticClient:
                             self._data["tanks"][tipo_id]["estado"] = estado
                             if i + 3 < len(data):
                                 self._data["tanks"][tipo_id]["nivel"] = data[i + 3]
-                                step = 4  # Ajuste de desplazamiento: las tramas de tanque ocupan 4 bytes
+                                step = 4
                         elif tipo_upper == OUTPUT_TYPE_PISCINA and tipo_id in self._data.get("pools", {}):
                             self._data["pools"][tipo_id]["estado"] = estado
                         elif tipo_upper == OUTPUT_TYPE_MANGUERA and tipo_id in self._data.get("mangueras", {}):
@@ -557,7 +636,6 @@ class HidromoticClient:
                             self._data["ciclon"][tipo_id]["estado"] = estado
                 i += step
 
-            # Actualización de Programas de Riego
             elif section == "H":
                 if i + 2 < len(data):
                     riego_id = data[i + 1]
@@ -568,12 +646,8 @@ class HidromoticClient:
             else:
                 i += 1
 
-    # -------------------------------------------------------------------
-    # Métodos de Control y Envío de Estados
-    # -------------------------------------------------------------------
-
     async def _set_output_state(self, entity_type: str, entity_id: int, on: bool) -> None:
-        """Método genérico para cambiar el estado de una salida por su slot_id."""
+        """Cambia el estado de una salida física especificando su tipo e id."""
         entity = self._data.get(entity_type, {}).get(entity_id)
         if not entity:
             _LOGGER.warning("%s %d not found", entity_type.capitalize(), entity_id)
@@ -586,23 +660,18 @@ class HidromoticClient:
         await self._send_command(command)
 
     async def set_zone_state(self, zone_id: int, on: bool) -> None:
-        """Enciende o apaga una zona de riego."""
         await self._set_output_state("zones", zone_id, on)
 
     async def set_tank_state(self, tank_id: int, on: bool) -> None:
-        """Enciende o apaga el llenado de un tanque."""
         await self._set_output_state("tanks", tank_id, on)
 
     async def set_pool_state(self, pool_id: int, on: bool) -> None:
-        """Enciende o apaga el llenado de una piscina."""
         await self._set_output_state("pools", pool_id, on)
 
     async def set_manguera_state(self, manguera_id: int, on: bool) -> None:
-        """Enciende o apaga una salida tipo manguera."""
         await self._set_output_state("mangueras", manguera_id, on)
 
     async def set_riego_state(self, riego_id: int, on: bool) -> None:
-        """Activa o desactiva un programa de riego automático."""
         riego = self._data.get("riegos", {}).get(riego_id)
         if not riego:
             return
@@ -613,7 +682,6 @@ class HidromoticClient:
         await self._send_command(command)
 
     async def set_auto_riego(self, on: bool) -> None:
-        """Habilita o deshabilita el modo Auto Riego global."""
         state = 1 if on else 0
         command = f"#@RA{state};"
         await self._send_command(command)
@@ -625,12 +693,7 @@ class HidromoticClient:
                 _LOGGER.error("Error in callback: %s", err)
 
     async def refresh(self) -> None:
-        """Solicita una relectura limpia de la configuración enviando #@C;."""
         await self._send_command("#@C;")
-
-    # -------------------------------------------------------------------
-    # Consultores de Datos y Getters Seguros
-    # -------------------------------------------------------------------
 
     def get_zones(self) -> dict[int, dict[str, Any]]:
         return self._data.get("zones", {})
@@ -656,20 +719,7 @@ class HidromoticClient:
     def is_auto_riego_on(self) -> bool:
         return self._data.get("auto_riego", False)
 
-    def is_zone_on(self, zone_id: int) -> bool:
-        zone = self._data.get("zones", {}).get(zone_id)
-        return zone.get("estado", 0) == 1 if zone else False
-
-    def is_tank_full(self, tank_id: int) -> bool:
-        tank = self._data.get("tanks", {}).get(tank_id)
-        return tank.get("nivel", 0xFF) == TANK_FULL if tank else False
-
-    def is_tank_empty(self, tank_id: int) -> bool:
-        tank = self._data.get("tanks", {}).get(tank_id)
-        return tank.get("nivel", 0xFF) == TANK_EMPTY if tank else False
-
     def get_tank_level(self, tank_id: int) -> str:
-        """Retorna la representación en texto del nivel del tanque mapeando las constantes."""
         tank = self._data.get("tanks", {}).get(tank_id)
         if not tank:
             return "unknown"
