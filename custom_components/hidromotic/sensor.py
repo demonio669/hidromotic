@@ -1,8 +1,4 @@
-"""Sensor platform for Hidromotic tanks, pump, and system diagnostics.
-
-Este módulo gestiona la creación y actualización de todas las entidades de tipo 'sensor'
-del sistema Hidromotic en Home Assistant.
-"""
+"""Sensor platform for Hidromotic tanks, pump, and system diagnostics."""
 
 from __future__ import annotations
 
@@ -14,10 +10,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import (
-    PERCENTAGE,
-    UnitOfTime,
-)
+from homeassistant.const import PERCENTAGE, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -38,18 +31,14 @@ async def async_setup_entry(
     """Set up Hidromotic sensors from a config entry."""
     coordinator = entry.runtime_data
 
-    # Registro de todas las entidades de diagnóstico y sistema requeridas
     entities: list[SensorEntity] = [
-        # Bomba
         HidromoticPumpSensor(coordinator, entry),
         HidromoticPumpMarchaSensor(coordinator, entry),
-        # Red & Conectividad
         HidromoticWifiSSIDSensor(coordinator, entry),
         HidromoticIPAddressSensor(coordinator, entry),
         HidromoticWifiSignalSensor(coordinator, entry),
         HidromoticWifiConnectedTimeSensor(coordinator, entry),
         HidromoticMacAddressSensor(coordinator, entry),
-        # Hardware & Firmware
         HidromoticTypeSensor(coordinator, entry),
         HidromoticPicVersionSensor(coordinator, entry),
         HidromoticChipIDSensor(coordinator, entry),
@@ -57,10 +46,12 @@ async def async_setup_entry(
         HidromoticDeviceIdSensor(coordinator, entry),
         HidromoticEspVersionSensor(coordinator, entry),
         HidromoticOtaSensor(coordinator, entry),
-        # Estado & Diagnóstico
         HidromoticBatterySensor(coordinator, entry),
         HidromoticUptimeSensor(coordinator, entry),
         HidromoticMessageCounterSensor(coordinator, entry),
+        # RECOMENDACIÓN 6: Sensores para rastrear reinicios del chip
+        HidromoticUartResetCountSensor(coordinator, entry),
+        HidromoticEspResetCountSensor(coordinator, entry),
     ]
 
     added_tanks: set[int] = set()
@@ -83,13 +74,8 @@ async def async_setup_entry(
 
     async_add_entities(entities)
     async_add_tank_sensors()
-
     entry.async_on_unload(coordinator.async_add_listener(async_add_tank_sensors))
 
-
-# ===================================================================
-# Clase Base de Diagnóstico
-# ===================================================================
 
 class HidromoticDiagnosticBaseSensor(
     CoordinatorEntity[HidromoticCoordinator], SensorEntity
@@ -106,7 +92,6 @@ class HidromoticDiagnosticBaseSensor(
         sensor_type: str,
         name: str,
     ) -> None:
-        """Inicializa el sensor de diagnóstico."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_{sensor_type}"
         self._attr_name = name
@@ -119,10 +104,6 @@ class HidromoticDiagnosticBaseSensor(
             else "CHI Smart",
         )
 
-
-# ===================================================================
-# Sensores de Bomba
-# ===================================================================
 
 class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntity):
     """Sensor para el estado general de la bomba."""
@@ -176,15 +157,7 @@ class HidromoticPumpMarchaSensor(HidromoticDiagnosticBaseSensor):
         return self.coordinator.get_pump().get("marcha", 0)
 
 
-# ===================================================================
-# Sensores de Red & Conectividad
-# ===================================================================
-
 class HidromoticWifiSSIDSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Red Wifi'."""
-
-    _attr_icon = "mdi:wifi"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "wifi_ssid", "Red Wifi")
 
@@ -194,10 +167,6 @@ class HidromoticWifiSSIDSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticIPAddressSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'IP'."""
-
-    _attr_icon = "mdi:ip-network"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "ip_address", "IP")
 
@@ -207,8 +176,6 @@ class HidromoticIPAddressSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticWifiSignalSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Nivel de señal' (%)."""
-
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_device_class = SensorDeviceClass.POWER_FACTOR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -222,8 +189,6 @@ class HidromoticWifiSignalSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticWifiConnectedTimeSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Tiempo conectado' WiFi."""
-
     _attr_icon = "mdi:wifi-clock"
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_device_class = SensorDeviceClass.DURATION
@@ -238,10 +203,6 @@ class HidromoticWifiConnectedTimeSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticMacAddressSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Mac addr'."""
-
-    _attr_icon = "mdi:network"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "mac_address", "Mac addr")
 
@@ -250,15 +211,7 @@ class HidromoticMacAddressSensor(HidromoticDiagnosticBaseSensor):
         return self.coordinator.client.data.get("mac", "unknown")
 
 
-# ===================================================================
-# Sensores de Hardware & Firmware
-# ===================================================================
-
 class HidromoticTypeSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Tipo' (CHI Smart / CHI Smart Mini)."""
-
-    _attr_icon = "mdi:microcontroller"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "device_type", "Tipo")
 
@@ -268,10 +221,6 @@ class HidromoticTypeSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticPicVersionSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Version PIC'."""
-
-    _attr_icon = "mdi:chip"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "pic_version", "Version PIC")
 
@@ -281,10 +230,6 @@ class HidromoticPicVersionSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticChipIDSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Chip ID'."""
-
-    _attr_icon = "mdi:identifier"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "chip_id", "Chip ID")
 
@@ -296,10 +241,6 @@ class HidromoticChipIDSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticPicDateSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'PIC Fecha'."""
-
-    _attr_icon = "mdi:calendar-clock"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "pic_fecha", "PIC Fecha")
 
@@ -309,10 +250,6 @@ class HidromoticPicDateSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticDeviceIdSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'ID del dispositivo'."""
-
-    _attr_icon = "mdi:badge-account-horizontal"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "device_id", "ID del dispositivo")
 
@@ -322,10 +259,6 @@ class HidromoticDeviceIdSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticEspVersionSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Vesion ESP'."""
-
-    _attr_icon = "mdi:memory"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "esp_version", "Vesion ESP")
 
@@ -335,10 +268,6 @@ class HidromoticEspVersionSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticOtaSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'OTA'."""
-
-    _attr_icon = "mdi:cloud-upload"
-
     def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
         super().__init__(coordinator, entry, "ota_status", "OTA")
 
@@ -347,13 +276,7 @@ class HidromoticOtaSensor(HidromoticDiagnosticBaseSensor):
         return str(self.coordinator.client.data.get("ota", "unknown")).upper()
 
 
-# ===================================================================
-# Sensores de Estado General
-# ===================================================================
-
 class HidromoticBatterySensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Batería' (%)."""
-
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_device_class = SensorDeviceClass.BATTERY
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -370,8 +293,6 @@ class HidromoticBatterySensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticUptimeSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Tiempo Energizado' (segundos)."""
-
     _attr_icon = "mdi:clock-start"
     _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_device_class = SensorDeviceClass.DURATION
@@ -386,8 +307,6 @@ class HidromoticUptimeSensor(HidromoticDiagnosticBaseSensor):
 
 
 class HidromoticMessageCounterSensor(HidromoticDiagnosticBaseSensor):
-    """Sensor 'Contador de mensajes'."""
-
     _attr_icon = "mdi:counter"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
@@ -399,13 +318,32 @@ class HidromoticMessageCounterSensor(HidromoticDiagnosticBaseSensor):
         return self.coordinator.client.data.get("c_msg", 0)
 
 
-# ===================================================================
-# Sensores de Tanque
-# ===================================================================
+# RECOMENDACIÓN 6: Implementación de sensores para UART Reset Count y ESP Reset Count
+class HidromoticUartResetCountSensor(HidromoticDiagnosticBaseSensor):
+    _attr_icon = "mdi:restart"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "uart_reset_count", "Reintentos UART")
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.client.data.get("uart_reset_count", 0)
+
+
+class HidromoticEspResetCountSensor(HidromoticDiagnosticBaseSensor):
+    _attr_icon = "mdi:chip"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "esp_reset_count", "Reinicios ESP")
+
+    @property
+    def native_value(self) -> int:
+        return self.coordinator.client.data.get("esp_reset_count", 0)
+
 
 class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntity):
-    """Sensor para el nivel del tanque de agua."""
-
     _attr_has_entity_name = True
     _attr_icon = "mdi:water-percent"
 
@@ -433,23 +371,5 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
         )
 
     @property
-    def available(self) -> bool:
-        tanks = self.coordinator.get_tanks()
-        return self._tank_id in tanks and super().available
-
-    @property
     def native_value(self) -> str:
         return self.coordinator.client.get_tank_level(self._tank_id)
-
-    @property
-    def icon(self) -> str:
-        value = self.native_value
-        if value == "full":
-            return "mdi:water"
-        if value == "empty":
-            return "mdi:water-off"
-        if value == "medium":
-            return "mdi:water-percent"
-        if value in ("sensor_fail", "level_fail"):
-            return "mdi:water-alert"
-        return "mdi:water-percent"

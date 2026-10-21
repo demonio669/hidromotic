@@ -1,10 +1,4 @@
-"""Binary sensor platform for Hidromotic tanks and physical inputs.
-
-Este módulo se encarga de crear y actualizar las entidades de tipo 'binary_sensor'
-para representar:
-1. Sensores de estado de tanques (Lleno / Vacío).
-2. Entradas físicas digitales de la placa (Detector de agua, Sensor de lluvia, etc.).
-"""
+"""Binary sensor platform for Hidromotic tanks, physical inputs, and system blocks."""
 
 from __future__ import annotations
 
@@ -16,12 +10,12 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, TANK_EMPTY, TANK_FULL
+from .const import DOMAIN, TANK_FULL
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +29,12 @@ async def async_setup_entry(
     """Set up Hidromotic binary sensors from a config entry."""
     coordinator = entry.runtime_data
 
+    # RECOMENDACIÓN 3: Entidades binarias para diagnóstico del sistema (Pausa Externa / Lluvia)
+    entities: list[BinarySensorEntity] = [
+        HidromoticExternalPauseBinarySensor(coordinator, entry),
+        HidromoticRainBlockedBinarySensor(coordinator, entry),
+    ]
+
     added_tanks: set[int] = set()
     added_inputs: set[int] = set()
 
@@ -43,9 +43,6 @@ async def async_setup_entry(
         """Add sensors for newly discovered tanks and physical inputs."""
         new_entities: list[BinarySensorEntity] = []
 
-        # ------------------------------------------------------------------
-        # 1. Detección y Registro de Sensores Binarios de Tanques
-        # ------------------------------------------------------------------
         tanks = coordinator.get_tanks()
         for tank_id, tank_data in tanks.items():
             if tank_id not in added_tanks:
@@ -57,9 +54,6 @@ async def async_setup_entry(
                     HidromoticTankEmptySensor(coordinator, entry, tank_id, tank_data)
                 )
 
-        # ------------------------------------------------------------------
-        # 2. Detección y Registro de Entradas Físicas Digitales (E0 - E3)
-        # ------------------------------------------------------------------
         inputs = coordinator.client.data.get("inputs", {})
         for input_id, input_data in inputs.items():
             if input_id not in added_inputs and input_data.get("tipo", 0) != 0:
@@ -71,13 +65,63 @@ async def async_setup_entry(
         if new_entities:
             async_add_entities(new_entities)
 
+    async_add_entities(entities)
     async_add_binary_sensors()
     entry.async_on_unload(coordinator.async_add_listener(async_add_binary_sensors))
 
 
-# ===================================================================
-# Clases Base e Implementación para Tanques de Agua
-# ===================================================================
+# RECOMENDACIÓN 3: Sensor de Pausa Externa
+class HidromoticExternalPauseBinarySensor(
+    CoordinatorEntity[HidromoticCoordinator], BinarySensorEntity
+):
+    """Binary sensor for external pause status."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_external_pause"
+        self._attr_name = "Pausa Externa"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini" if coordinator.client.data.get("is_mini") else "CHI Smart",
+        )
+
+    @property
+    def is_on(self) -> bool:
+        """Retorna True si hay una pausa externa activa en la bomba."""
+        return self.coordinator.get_pump().get("pausa_externa", 0) != 0
+
+
+# RECOMENDACIÓN 3 & 4: Sensor de Bloqueo por Lluvia
+class HidromoticRainBlockedBinarySensor(
+    CoordinatorEntity[HidromoticCoordinator], BinarySensorEntity
+):
+    """Binary sensor indicating if auto irrigation is blocked by rain."""
+
+    _attr_has_entity_name = True
+    _attr_device_class = BinarySensorDeviceClass.MOISTURE
+
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{entry.entry_id}_rain_blocked"
+        self._attr_name = "Riego Bloqueado por Lluvia"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini" if coordinator.client.data.get("is_mini") else "CHI Smart",
+        )
+
+    @property
+    def is_on(self) -> bool:
+        """Retorna True si el sensor de lluvia tiene bloqueado el auto riego."""
+        return self.coordinator.client.is_lluvia_bloqueado()
+
 
 class HidromoticTankBaseBinarySensor(
     CoordinatorEntity[HidromoticCoordinator], BinarySensorEntity
@@ -96,13 +140,11 @@ class HidromoticTankBaseBinarySensor(
         sensor_type: str,
         name_suffix: str,
     ) -> None:
-        """Initialize the base binary sensor."""
         super().__init__(coordinator)
         self._tank_id = tank_id
         self._entry = entry
 
         base_label = tank_data.get("label") or f"Tanque {tank_id + 1}"
-
         self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_{sensor_type}"
         self._attr_name = f"{base_label} {name_suffix}"
 
@@ -117,25 +159,12 @@ class HidromoticTankBaseBinarySensor(
 
     @property
     def available(self) -> bool:
-        """Return True if the entity is available."""
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
         if tank:
             nivel = tank.get("nivel", 0xFF)
             return nivel != 0xFF and nivel not in (2, 3) and super().available
         return False
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return extra state attributes."""
-        tanks = self.coordinator.get_tanks()
-        tank = tanks.get(self._tank_id)
-        if tank:
-            return {
-                "level_raw": tank.get("nivel", 0xFF),
-                "level": self.coordinator.client.get_tank_level(self._tank_id),
-            }
-        return {}
 
 
 class HidromoticTankFullSensor(HidromoticTankBaseBinarySensor):
@@ -184,10 +213,6 @@ class HidromoticTankEmptySensor(HidromoticTankBaseBinarySensor):
         return False
 
 
-# ===================================================================
-# Implementación para Entradas Físicas Digitales (E0 - E3)
-# ===================================================================
-
 class HidromoticPhysicalInputSensor(
     CoordinatorEntity[HidromoticCoordinator], BinarySensorEntity
 ):
@@ -202,7 +227,6 @@ class HidromoticPhysicalInputSensor(
         input_id: int,
         input_data: dict[str, Any],
     ) -> None:
-        """Initialize the physical input binary sensor."""
         super().__init__(coordinator)
         self._input_id = input_id
         self._entry = entry
@@ -212,9 +236,9 @@ class HidromoticPhysicalInputSensor(
         self._attr_name = f"Entrada {input_id + 1} ({tipo_name})"
 
         tipo = input_data.get("tipo", 0)
-        if tipo in (1, 2):  # Detector de agua (1) y Sensor de lluvia (2)
+        if tipo in (1, 2):
             self._attr_device_class = BinarySensorDeviceClass.MOISTURE
-        elif tipo in (11, 12):  # Pausa externa
+        elif tipo in (11, 12):
             self._attr_device_class = BinarySensorDeviceClass.PROBLEM
         else:
             self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
@@ -229,29 +253,9 @@ class HidromoticPhysicalInputSensor(
         )
 
     @property
-    def available(self) -> bool:
-        """Return True if the input exists in coordinator data."""
-        inputs = self.coordinator.client.data.get("inputs", {})
-        return self._input_id in inputs and super().available
-
-    @property
     def is_on(self) -> bool:
-        """Return True if physical input is active, taking inversion into account."""
         inputs = self.coordinator.client.data.get("inputs", {})
         inp = inputs.get(self._input_id)
         if inp:
             return inp.get("estado", False)
         return False
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return extra state attributes."""
-        inputs = self.coordinator.client.data.get("inputs", {})
-        inp = inputs.get(self._input_id, {})
-        return {
-            "input_id": self._input_id + 1,
-            "tipo_id": inp.get("tipo"),
-            "tipo_function": inp.get("tipo_name"),
-            "inverted": inp.get("invert", False),
-            "raw_state": inp.get("raw_estado", False),
-        }

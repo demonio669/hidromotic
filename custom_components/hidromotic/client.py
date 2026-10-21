@@ -86,7 +86,7 @@ class HidromoticClient:
         self._should_reconnect = True
         self._reconnect_task: asyncio.Task[None] | None = None
         self._listener_task: asyncio.Task[None] | None = None
-        self._data: dict[str, Any] = {"c_msg": 0}
+        self._data: dict[str, Any] = {"c_msg": 0, "lluvia_bloqueado": False, "tareas": {}}
 
         self.data_ready = asyncio.Event()
         self._lock = asyncio.Lock()
@@ -109,7 +109,7 @@ class HidromoticClient:
         return lambda: self._callbacks.remove(callback)
 
     async def connect(self) -> bool:
-        """Establece la conexión WebSocket con la controladora."""
+        """Establece la conexión WebSocket con la controladora e inicia la escucha."""
         try:
             if self._session is None:
                 self._session = aiohttp.ClientSession()
@@ -125,6 +125,7 @@ class HidromoticClient:
 
             await self._send_command("e")
             await self._send_command("#@C;")
+            await self._send_command("#@EY;")
         except Exception as err:
             _LOGGER.error("Failed to connect to Hidromotic: %s", err)
             self._connected = False
@@ -293,7 +294,6 @@ class HidromoticClient:
         self._data["pic_id"] = f"0x{data[6]:02X}"
         self._data["pic_rev"] = data[7] if len(data) > 7 else 0
 
-        # Sincronización BCD de Fecha PIC
         if len(data) >= 16:
             bcd_to_hex = lambda v: (((v & 0xF0) >> 4) * 10) + (v & 0x0F)
             try:
@@ -317,6 +317,7 @@ class HidromoticClient:
         self._data["inputs"] = {}
         self._data["outputs"] = {}
         self._data["outputs_by_tipo"] = {}
+        self._data["tareas"] = {}
 
         if "auto_riego" not in self._data:
             self._data["auto_riego"] = True
@@ -344,8 +345,14 @@ class HidromoticClient:
                 "pausa_externa": data[b_pos + 2],
                 "marcha": marcha,
             }
+            idx_b = b_pos + 7
+            if idx_b + 9 < len(data):
+                self._data["pump"]["t0_offduracion"] = data[idx_b] | (data[idx_b + 1] << 8)
+                self._data["pump"]["t1_ondelay"] = data[idx_b + 2] | (data[idx_b + 3] << 8)
+                self._data["pump"]["t2_desactivando"] = data[idx_b + 4] | (data[idx_b + 5] << 8)
+                self._data["pump"]["t3_pozoseco"] = data[idx_b + 6] | (data[idx_b + 7] << 8)
+                self._data["pump"]["t4_pozoseco_auto_recover"] = data[idx_b + 8] | (data[idx_b + 9] << 8)
 
-        # Parseo de Entradas Físicas Digitales ('E') considerando la inversión lógica
         if e_pos is not None:
             idx = e_pos + 1
             for j in range(4):
@@ -354,8 +361,6 @@ class HidromoticClient:
                     invert = data[idx + 1] == 1
                     actual = data[idx + 2]
                     raw_estado = data[idx + 3] == 1
-
-                    # Se calcula el estado efectivo contemplando la inversión lógica
                     effective_state = raw_estado ^ invert
 
                     self._data["inputs"][j] = {
@@ -417,27 +422,33 @@ class HidromoticClient:
                 label_len = 0
 
             modo, etc, nivel = 0, 0, 0
-            automatico_tareas_enabled = 0
-            automatico_fin_tareas_enabled = 0
-            automatico_tiempo_bomba_enabled = 0
-            automatico_tareas = 0
-            automatico_fin_tareas = 0
-            automatico_tiempo_bomba = 0
+            modo_ante_tareas, d_ante_tareas = 0, 0
+            modo_fin_de_tareas, d_fin_de_tareas = 0, 0
+            modo_tiempo, bomba_marcha_duracion, proximo_ciclon = 0, 0, 0
+
+            header_size = 6
 
             if is_tank and estado != STATE_DISABLED:
+                header_size = 9
                 if i + 6 + label_len + 2 < len(data):
                     modo = data[i + 6 + label_len]
                     etc = data[i + 6 + label_len + 1]
                     nivel = data[i + 6 + label_len + 2]
 
             if is_ciclon and estado != STATE_DISABLED:
-                if i + 6 + label_len + 7 < len(data):
-                    automatico_tareas_enabled = data[i + 6 + label_len]
-                    automatico_fin_tareas_enabled = data[i + 6 + label_len + 1]
-                    automatico_tiempo_bomba_enabled = data[i + 6 + label_len + 2]
-                    automatico_tareas = data[i + 6 + label_len + 3] | (data[i + 6 + label_len + 4] << 8)
-                    automatico_fin_tareas = data[i + 6 + label_len + 5]
-                    automatico_tiempo_bomba = data[i + 6 + label_len + 6] | (data[i + 6 + label_len + 7] << 8)
+                header_size = 16
+                base_idx = i + 6 + label_len
+                if base_idx + 9 < len(data):
+                    modo_ante_tareas = data[base_idx]
+                    modo_fin_de_tareas = data[base_idx + 1]
+                    modo_tiempo = data[base_idx + 2]
+                    d_ante_tareas = data[base_idx + 3] | (data[base_idx + 4] << 8)
+                    d_fin_de_tareas = data[base_idx + 5]
+                    bomba_marcha_duracion = data[base_idx + 6] | (data[base_idx + 7] << 8)
+                    proximo_ciclon = data[base_idx + 8] | (data[base_idx + 9] << 8)
+
+            if estado == STATE_DISABLED:
+                header_size = 6
 
             tipo_id = (tipo & 0x0F) - 1
 
@@ -451,13 +462,6 @@ class HidromoticClient:
                 "estado": estado,
                 "label": label,
             }
-
-            header_size = 9 if is_tank else 6
-            if is_ciclon:
-                header_size = 16
-
-            if estado == STATE_DISABLED:
-                header_size = 6
 
             i += header_size + label_len
             slot_id += 1
@@ -509,12 +513,13 @@ class HidromoticClient:
                     "estado": estado,
                     "label": label or f"Ciclon {tipo_id + 1}",
                     "duracion": duracion,
-                    "automatico_tareas_enabled": automatico_tareas_enabled,
-                    "automatico_fin_tareas_enabled": automatico_fin_tareas_enabled,
-                    "automatico_tiempo_bomba_enabled": automatico_tiempo_bomba_enabled,
-                    "automatico_tareas": automatico_tareas,
-                    "automatico_fin_tareas": automatico_fin_tareas,
-                    "automatico_tiempo_bomba": automatico_tiempo_bomba,
+                    "modo_ante_tareas": modo_ante_tareas,
+                    "modo_fin_de_tareas": modo_fin_de_tareas,
+                    "modo_tiempo": modo_tiempo,
+                    "d_ante_tareas": d_ante_tareas,
+                    "d_fin_de_tareas": d_fin_de_tareas,
+                    "bomba_marcha_duracion": bomba_marcha_duracion,
+                    "proximo_ciclon": proximo_ciclon,
                 }
 
         for idx in range(i, len(data)):
@@ -523,9 +528,16 @@ class HidromoticClient:
             elif data[idx] == 0x62 and "bateria" not in self._data:
                 if idx + 2 < len(data):
                     self._data["bateria"] = data[idx + 1] | (data[idx + 2] << 8)
+            elif data[idx] == 0x75:
+                if idx + 2 < len(data):
+                    self._data["uart_reset_count"] = data[idx + 1] | (data[idx + 2] << 8)
+            elif data[idx] == 0x63:
+                if idx + 2 < len(data):
+                    self._data["esp_reset_count"] = data[idx + 1] | (data[idx + 2] << 8)
 
-        if r_pos is not None and r_pos + 1 < len(data):
-            self._data["auto_riego"] = data[r_pos + 1] == 1
+        if r_pos is not None and r_pos + 3 < len(data):
+            self._data["auto_riego"] = data[r_pos + 1] != 0
+            self._data["lluvia_bloqueado"] = data[r_pos + 3] == 1
 
         riego_header_size = 28 if is_mini else 40
         max_riego_zonas = 6 if is_mini else 12
@@ -576,7 +588,7 @@ class HidromoticClient:
         self.data_ready.set()
 
     async def _parse_running_data(self, data: bytes) -> None:
-        """Parsea actualizaciones parciales en tiempo real enviadas por la placa."""
+        """Parsea actualizaciones parciales en tiempo real enviadas por la placa en la trama 'D'."""
         i = 6
         while i < len(data):
             section = chr(data[i])
@@ -609,13 +621,13 @@ class HidromoticClient:
                     if inp:
                         invert = inp.get("invert", False)
                         inp["raw_estado"] = raw_estado
-                        # Aplica la inversión lógica en la actualización en vivo
                         inp["estado"] = raw_estado ^ invert
                 i += 3
 
             elif section == "R":
-                if i + 1 < len(data):
-                    self._data["auto_riego"] = data[i + 1] == 1
+                if i + 2 < len(data):
+                    self._data["auto_riego"] = data[i + 1] != 0
+                    self._data["lluvia_bloqueado"] = data[i + 2] == 1
                 i += 2
 
             elif section == "S":
@@ -643,15 +655,44 @@ class HidromoticClient:
                             self._data["mangueras"][tipo_id]["estado"] = estado
                         elif tipo_upper == OUTPUT_TYPE_CICLON and tipo_id in self._data.get("ciclon", {}):
                             self._data["ciclon"][tipo_id]["estado"] = estado
+                            if i + 4 < len(data):
+                                self._data["ciclon"][tipo_id]["proximo_ciclon"] = data[i + 3] | (data[i + 4] << 8)
+                                step = 5
                 i += step
 
             elif section == "H":
-                if i + 2 < len(data):
+                if i + 8 < len(data):
                     riego_id = data[i + 1]
-                    estado = data[i + 2]
                     if riego_id in self._data.get("riegos", {}):
-                        self._data["riegos"][riego_id]["estado"] = estado
-                i += 3
+                        self._data["riegos"][riego_id]["estado"] = data[i + 2]
+                        self._data["riegos"][riego_id]["active_zona"] = data[i + 3]
+                        self._data["riegos"][riego_id]["duracion"] = (
+                            data[i + 5] | (data[i + 6] << 8) | (data[i + 7] << 16) | (data[i + 8] << 24)
+                        )
+                i += 8
+
+            elif section == "L":
+                if i + 3 < len(data):
+                    tarea_id = data[i + 1]
+                    tipo_hex = f"{data[i + 2]:02X}"
+                    modo = data[i + 3]
+                    duracion = 0
+                    if tarea_id == 0 and i + 5 < len(data):
+                        duracion = data[i + 4] | (data[i + 5] << 8)
+                        i += 5
+                    else:
+                        i += 3
+
+                    self._data["tareas"][tarea_id] = {
+                        "id": tarea_id,
+                        "tipo": tipo_hex,
+                        "modo": modo,
+                        "duracion": duracion,
+                    }
+            elif section == "u":
+                if i + 2 < len(data):
+                    self._data["uart_reset_count"] = data[i + 1] | (data[i + 2] << 8)
+                i += 2
             else:
                 i += 1
 
@@ -680,6 +721,9 @@ class HidromoticClient:
     async def set_manguera_state(self, manguera_id: int, on: bool) -> None:
         await self._set_output_state("mangueras", manguera_id, on)
 
+    async def set_ciclon_state(self, ciclon_id: int, on: bool) -> None:
+        await self._set_output_state("ciclon", ciclon_id, on)
+
     async def set_riego_state(self, riego_id: int, on: bool) -> None:
         riego = self._data.get("riegos", {}).get(riego_id)
         if not riego:
@@ -690,9 +734,49 @@ class HidromoticClient:
         command = f"#@H{int_to_hex(slot_id)}M{state};"
         await self._send_command(command)
 
+    # NUEVO MÉTODO: Modifica la duración en minutos de una salida dinámica (Pool, Zone, etc.)
+    async def set_output_duration(self, entity_type: str, entity_id: int, duration_minutes: int) -> None:
+        """Cambia la duración en minutos de una salida dinámica enviando #@S{slot}D{minutos};#@+;"""
+        entity = self._data.get(entity_type, {}).get(entity_id)
+        if not entity:
+            _LOGGER.warning("%s %d no encontrado al cambiar duración", entity_type.capitalize(), entity_id)
+            return
+
+        slot_id = entity["slot_id"]
+        command = f"#@S{int_to_hex(slot_id)}D{duration_minutes};#@+;"
+        await self._send_command(command)
+
+        entity["duracion"] = duration_minutes
+        for callback in self._callbacks:
+            try:
+                callback(self._data)
+            except Exception as err:
+                _LOGGER.error("Error en callback al cambiar duración: %s", err)
+
+    # NUEVO MÉTODO: Modifica la duración en minutos de una zona en un programa de Riego
+    async def set_riego_zona_duration(self, riego_id: int, zona_idx: int, duration_minutes: int) -> None:
+        """Cambia la duración en minutos de una zona en un programa de Riego enviando #@H{slot}Z{zona}D{minutos};#@+;"""
+        riego = self._data.get("riegos", {}).get(riego_id)
+        if not riego:
+            _LOGGER.warning("Riego %d no encontrado al cambiar duración", riego_id)
+            return
+
+        slot_id = riego["slot_id"]
+        command = f"#@H{int_to_hex(slot_id)}Z{zona_idx + 1}D{duration_minutes};#@+;"
+        await self._send_command(command)
+
+        if "zonas" in riego:
+            riego["zonas"][f"duracion_{zona_idx + 1}"] = duration_minutes
+
+        for callback in self._callbacks:
+            try:
+                callback(self._data)
+            except Exception as err:
+                _LOGGER.error("Error en callback al cambiar duración de riego: %s", err)
+
     async def set_auto_riego(self, on: bool) -> None:
         state = 1 if on else 0
-        command = f"#@RA{state};"
+        command = f"#@RA{state};#@+;"
         await self._send_command(command)
         self._data["auto_riego"] = on
         for callback in self._callbacks:
@@ -727,6 +811,9 @@ class HidromoticClient:
 
     def is_auto_riego_on(self) -> bool:
         return self._data.get("auto_riego", False)
+
+    def is_lluvia_bloqueado(self) -> bool:
+        return self._data.get("lluvia_bloqueado", False)
 
     def get_tank_level(self, tank_id: int) -> str:
         tank = self._data.get("tanks", {}).get(tank_id)

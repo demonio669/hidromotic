@@ -20,20 +20,19 @@ STATE_WAITING = 5
 STATE_DISABLED = 7  # Disconnected/disabled
 
 # Tank levels (nivel)
-#TANK_FULL = 0
-#TANK_EMPTY = 1
-
 TANK_FULL = 1
 TANK_EMPTY = 0
-
 TANK_SENSOR_FAIL = 2
 TANK_LEVEL_FAIL = 3
 TANK_MEDIUM = 4
-
-
 
 # Pump states
 PUMP_OFF = 0
 PUMP_ON = 1
 PUMP_RECOVERY = 11
 PUMP_NO_WATER = 5
+
+# Pausa externa (pausa_externa)
+PAUSA_EXTERNA_NINGUNA = 0
+PAUSA_EXTERNA_ACTIVA = 1
+PAUSA_EXTERNA_FALLA = 2
