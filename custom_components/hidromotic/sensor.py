@@ -153,21 +153,7 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
     @property
     def native_value(self) -> str:
         """Return the tank level."""
-        tanks = self.coordinator.get_tanks()
-        tank = tanks.get(self._tank_id)
-        if tank:
-            nivel = tank.get("nivel", 0xFF)
-            level_map = {
-#                0: "full",
-#                1: "empty",
-                0: "empty",
-                1: "full",
-                2: "sensor_fail",
-                3: "level_fail",
-                4: "medium",
-            }
-            return level_map.get(nivel, "unknown")
-        return "unknown"
+        return self.coordinator.client.get_tank_level(self._tank_id)
 
     @property
     def icon(self) -> str:
