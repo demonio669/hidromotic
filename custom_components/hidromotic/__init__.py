@@ -15,7 +15,7 @@ from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.SENSOR,Platform.NUMBER]
+PLATFORMS: list[Platform] = [Platform.SWITCH, Platform.BINARY_SENSOR, Platform.SENSOR,Platform.NUMBER,Platform.BUTTON]
 
 type HidromoticConfigEntry = ConfigEntry[HidromoticCoordinator]
 

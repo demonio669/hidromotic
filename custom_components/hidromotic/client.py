@@ -785,6 +785,12 @@ class HidromoticClient:
             except Exception as err:
                 _LOGGER.error("Error in callback: %s", err)
 
+    async def reboot_device(self) -> None:
+        """Envía el comando de reinicio a la placa CHI Smart."""
+        _LOGGER.info("Enviando comando de reinicio a Hidromotic...")
+        # Comando de reinicio del sistema (equivalente a onSistemaReset() en app.js)
+        await self._send_command("i.e")
+
     async def refresh(self) -> None:
         await self._send_command("#@C;")
 
