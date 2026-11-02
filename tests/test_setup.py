@@ -3,6 +3,7 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from awesomeversion import AwesomeVersion
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.hidromotic import async_setup_entry, async_unload_entry
@@ -21,13 +22,22 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
         self.entry.entry_id = "entry-1"
         self.entry.unique_id = "aabbccddeeff"
         self.client = MagicMock()
-        self.client.data = {"mac": "AA:BB:CC:DD:EE:FF"}
+        self.client.data = {
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "device_id": "CHI/C985AB",
+        }
         self.coordinator = MagicMock()
         self.coordinator.async_setup = AsyncMock(return_value=True)
         self.coordinator.async_shutdown = AsyncMock()
-        self.integration = MagicMock(version="1.0.52")
+        self.integration = MagicMock(version=AwesomeVersion("1.0.53"))
         self.integration_lookup = AsyncMock(return_value=self.integration)
         self.hass.config_entries.async_forward_entry_setups = AsyncMock()
+        self.coordinator_factory_patch = patch(
+            "custom_components.hidromotic.HidromoticCoordinator",
+            return_value=self.coordinator,
+        )
+        self.coordinator_factory = self.coordinator_factory_patch.start()
+        self.addCleanup(self.coordinator_factory_patch.stop)
         self.patches = [
             patch(
                 "custom_components.hidromotic.async_get_clientsession",
@@ -41,10 +51,6 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
                 "custom_components.hidromotic.HidromoticClient",
                 return_value=self.client,
             ),
-            patch(
-                "custom_components.hidromotic.HidromoticCoordinator",
-                return_value=self.coordinator,
-            ),
         ]
         for mocked in self.patches:
             mocked.start()
@@ -55,6 +61,9 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
         self.assertIs(self.entry.runtime_data, self.coordinator)
+        self.coordinator_factory.assert_called_once_with(
+            self.hass, self.client, self.entry, "1.0.53"
+        )
         self.integration_lookup.assert_awaited_once_with(self.hass, "hidromotic")
         self.hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
@@ -83,13 +92,13 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
             session=session,
         )
 
-    async def test_setup_entry_updates_normalized_unique_id(self) -> None:
-        self.entry.unique_id = "not-a-mac"
+    async def test_setup_entry_migrates_mac_unique_id_to_device_id(self) -> None:
+        self.entry.unique_id = "aabbccddeeff"
 
         await async_setup_entry(self.hass, self.entry)
 
         self.hass.config_entries.async_update_entry.assert_called_once_with(
-            self.entry, unique_id="aabbccddeeff"
+            self.entry, unique_id="chi_c985ab"
         )
 
     async def test_setup_entry_rejects_connection_or_identity_failures(self) -> None:
@@ -99,14 +108,14 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator.async_shutdown.assert_awaited_once()
 
         self.coordinator.async_setup.return_value = True
-        self.client.data = {"mac": "invalid"}
+        self.client.data = {"mac": "AA:BB:CC:DD:EE:FF", "device_id": "invalid"}
         with self.assertRaises(ConfigEntryNotReady):
             await async_setup_entry(self.hass, self.entry)
         self.assertEqual(self.coordinator.async_shutdown.await_count, 2)
 
-    async def test_setup_entry_rejects_duplicate_device_mac(self) -> None:
+    async def test_setup_entry_rejects_duplicate_device_id(self) -> None:
         self.entry.unique_id = "other-id"
-        duplicate = MagicMock(entry_id="entry-2", unique_id="aabbccddeeff")
+        duplicate = MagicMock(entry_id="entry-2", unique_id="chi_c985ab")
         self.hass.config_entries.async_entries.return_value = [self.entry, duplicate]
 
         with self.assertRaises(ConfigEntryNotReady):

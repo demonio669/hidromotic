@@ -11,7 +11,12 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_integration
 
-from .client import HidromoticClient, hex_to_int, int_to_hex, normalize_mac_address
+from .client import (
+    HidromoticClient,
+    hex_to_int,
+    int_to_hex,
+    normalize_device_identifier,
+)
 from .cloud_client import HidromoticCloudClient
 from .const import (
     CONF_CONNECTION_TYPE,
@@ -51,32 +56,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: HidromoticConfigEntry) -
         client = HidromoticClient(host, session=session)
         connection_name = f"Hidromotic device at {host}"
 
-    coordinator = HidromoticCoordinator(hass, client, entry, integration.version)
+    integration_version = (
+        str(integration.version) if integration.version is not None else None
+    )
+    coordinator = HidromoticCoordinator(hass, client, entry, integration_version)
 
     if not await coordinator.async_setup():
         await coordinator.async_shutdown()
         raise ConfigEntryNotReady(f"Failed to connect to {connection_name}")
 
-    mac = normalize_mac_address(client.data.get("mac"))
-    if mac is None:
+    device_id = normalize_device_identifier(client.data.get("device_id"))
+    if device_id is None:
         await coordinator.async_shutdown()
-        raise ConfigEntryNotReady("Hidromotic did not provide a valid MAC address")
-    if entry.unique_id != mac:
+        raise ConfigEntryNotReady("Hidromotic did not provide a valid device ID")
+    if entry.unique_id != device_id:
         duplicate = next(
             (
                 configured_entry
                 for configured_entry in hass.config_entries.async_entries(DOMAIN)
                 if configured_entry.entry_id != entry.entry_id
-                and configured_entry.unique_id == mac
+                and configured_entry.unique_id == device_id
             ),
             None,
         )
         if duplicate is not None:
             await coordinator.async_shutdown()
             raise ConfigEntryNotReady(
-                f"MAC address {mac} is already configured by another entry"
+                f"Device ID {device_id} is already configured by another entry"
             )
-        hass.config_entries.async_update_entry(entry, unique_id=mac)
+        hass.config_entries.async_update_entry(entry, unique_id=device_id)
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

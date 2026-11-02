@@ -14,7 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import TextSelector
 
-from .client import HidromoticClient, normalize_mac_address
+from .client import HidromoticClient, normalize_device_identifier
 from .cloud_client import HidromoticCloudClient
 from .const import (
     CONF_CONNECTION_TYPE,
@@ -61,16 +61,19 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
         try:
             await asyncio.wait_for(
-                asyncio.gather(client.data_ready.wait(), client.mac_ready.wait()),
+                asyncio.gather(
+                    client.data_ready.wait(),
+                    client.device_id_ready.wait(),
+                ),
                 timeout=INITIAL_DATA_WAIT_SECONDS,
             )
         except TimeoutError:
-            _LOGGER.error("Timeout esperando configuración y MAC del dispositivo")
+            _LOGGER.error("Timeout esperando configuración e ID del dispositivo")
             raise CannotConnect
 
-        device_id = normalize_mac_address(client.data.get("mac"))
+        device_id = normalize_device_identifier(client.data.get("device_id"))
         if device_id is None:
-            _LOGGER.error("El dispositivo no informó una dirección MAC válida")
+            _LOGGER.error("El dispositivo no informó un ID válido")
             raise CannotConnect
 
         is_mini = client.data.get("is_mini", False)
@@ -230,7 +233,7 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
                 _LOGGER.exception("Unexpected exception while reconfiguring")
                 errors["base"] = "unknown"
             else:
-                if normalize_mac_address(entry.unique_id) != info["device_id"]:
+                if entry.unique_id != info["device_id"]:
                     errors["base"] = "different_device"
                 else:
                     return self.async_update_reload_and_abort(

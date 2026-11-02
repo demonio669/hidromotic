@@ -80,6 +80,20 @@ def normalize_mac_address(mac: Any) -> str | None:
     return normalized
 
 
+def normalize_device_identifier(device_id: Any) -> str | None:
+    """Return a Home Assistant-safe ID from a CHI device identifier."""
+    if not isinstance(device_id, str):
+        return None
+
+    parts = device_id.strip().split("/")
+    if (
+        len(parts) != 2
+        or not all(part.isascii() and part.isalnum() for part in parts)
+    ):
+        return None
+    return f"{parts[0]}_{parts[1]}".lower()
+
+
 def _redact_sensitive_data(value: Any) -> Any:
     """Return a copy with credential-like fields redacted for debug logging."""
     if isinstance(value, dict):
@@ -126,6 +140,7 @@ class HidromoticClient:
 
         self.data_ready = asyncio.Event()
         self.mac_ready = asyncio.Event()
+        self.device_id_ready = asyncio.Event()
         self._lock = asyncio.Lock()
         self._command_lock = asyncio.Lock()
         self._last_command_sent_at: float | None = None
@@ -314,7 +329,10 @@ class HidromoticClient:
                 result = parsed.get("result", parsed)
                 if isinstance(result, dict):
                     if "id" in result:
-                        self._data["device_id"] = result.get("id")
+                        device_id = result.get("id")
+                        if isinstance(device_id, str) and device_id.strip():
+                            self._data["device_id"] = device_id.strip()
+                            self.device_id_ready.set()
                     if "fw_version" in result:
                         self._data["fw_version_esp"] = result.get("fw_version")
                     if "ota" in result:

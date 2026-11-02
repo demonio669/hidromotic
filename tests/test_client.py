@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock
 
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.hidromotic.client import HidromoticClient, normalize_mac_address
+from custom_components.hidromotic.client import (
+    HidromoticClient,
+    normalize_device_identifier,
+    normalize_mac_address,
+)
 
 
 class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
@@ -20,6 +24,17 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(normalize_mac_address("unknown"))
         self.assertIsNone(normalize_mac_address(None))
+
+    async def test_device_identifier_is_saved_and_signaled(self) -> None:
+        client = HidromoticClient("localhost")
+
+        await client._process_text('{"result":{"id":"CHI/7096C4"}}')
+
+        self.assertEqual(
+            normalize_device_identifier(client.data["device_id"]),
+            "chi_7096c4",
+        )
+        self.assertTrue(client.device_id_ready.is_set())
 
     async def test_riego_zone_duration_uses_zero_based_hex_zone_index(self) -> None:
         client = HidromoticClient("localhost")

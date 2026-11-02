@@ -14,6 +14,7 @@ class HidromoticCoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.client.connected = True
         self.client.data_ready = asyncio.Event()
         self.client.mac_ready = asyncio.Event()
+        self.client.device_id_ready = asyncio.Event()
         self.client.data = {"zones": {0: {}}}
         self.client.connect = AsyncMock(return_value=True)
         self.client.disconnect = AsyncMock()
@@ -21,9 +22,9 @@ class HidromoticCoordinatorTests(unittest.IsolatedAsyncioTestCase):
         self.entry = MagicMock()
         self.coordinator = HidromoticCoordinator(MagicMock(), self.client, self.entry)
 
-    async def test_setup_waits_for_configuration_and_mac(self) -> None:
+    async def test_setup_waits_for_configuration_and_device_id(self) -> None:
         self.client.data_ready.set()
-        self.client.mac_ready.set()
+        self.client.device_id_ready.set()
         self.coordinator.async_set_updated_data = MagicMock()
 
         self.assertTrue(await self.coordinator.async_setup())
