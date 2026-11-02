@@ -1,8 +1,8 @@
-"""Number platform for Hidromotic output and irrigation durations.
+"""Number platform for Hidromotic output durations.
 
 Este módulo crea entidades tipo 'number' ÚNICAMENTE para:
 1. Ajustar el tiempo de llenado/filtrado de las Piletas en minutos.
-2. Ajustar la duración de las zonas de riego (0 a 9999 minutos).
+2. Ajustar la duración de las zonas (0 a 9999 minutos).
 """
 
 from __future__ import annotations
@@ -32,13 +32,12 @@ async def async_setup_entry(
     """Set up Hidromotic duration numbers from a config entry."""
     coordinator = entry.runtime_data
     added_pools: set[int] = set()
-    added_riego_zonas: set[str] = set()
+    added_zones: set[int] = set()
 
     @callback
     def async_add_number_entities() -> None:
-        """Add duration controls for pools and every irrigation program zone."""
+        """Add duration controls for pools and irrigation zones."""
         pools = coordinator.get_pools()
-        riegos = coordinator.get_riegos()
         zones = coordinator.get_zones()
         new_entities: list[NumberEntity] = []
 
@@ -50,20 +49,15 @@ async def async_setup_entry(
                     HidromoticPoolDurationNumber(coordinator, entry, pool_id, pool_data)
                 )
 
-        # 2. Controles de tiempo para todas las zonas de cada programa de riego
-        max_zonas = 6 if coordinator.client.data.get("is_mini") else 12
-        for riego_id, riego_data in riegos.items():
-            for z_idx in range(max_zonas):
-                if z_idx not in zones:
-                    continue
-                entity_key = f"{riego_id}_z_{z_idx}"
-                if entity_key not in added_riego_zonas:
-                    added_riego_zonas.add(entity_key)
-                    new_entities.append(
-                        HidromoticRiegoZonaDurationNumber(
-                            coordinator, entry, riego_id, z_idx, riego_data
-                        )
+        # 2. Controles de duración de las salidas de zona, no de los programas.
+        for zone_id, zone_data in zones.items():
+            if zone_id not in added_zones:
+                added_zones.add(zone_id)
+                new_entities.append(
+                    HidromoticZoneDurationNumber(
+                        coordinator, entry, zone_id, zone_data
                     )
+                )
 
         if new_entities:
             async_add_entities(new_entities)
@@ -128,8 +122,8 @@ class HidromoticPoolDurationNumber(CoordinatorEntity[HidromoticCoordinator], Num
         await self.coordinator.client.set_output_duration("pools", self._pool_id, minutes)
 
 
-class HidromoticRiegoZonaDurationNumber(CoordinatorEntity[HidromoticCoordinator], NumberEntity):
-    """Control numérico para ajustar la duración de una zona en un programa de Riego."""
+class HidromoticZoneDurationNumber(CoordinatorEntity[HidromoticCoordinator], NumberEntity):
+    """Control numérico para ajustar la duración de una salida de zona."""
 
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
@@ -142,18 +136,16 @@ class HidromoticRiegoZonaDurationNumber(CoordinatorEntity[HidromoticCoordinator]
         self,
         coordinator: HidromoticCoordinator,
         entry: HidromoticConfigEntry,
-        riego_id: int,
-        zona_idx: int,
-        riego_data: dict[str, Any],
+        zone_id: int,
+        zone_data: dict[str, Any],
     ) -> None:
         super().__init__(coordinator)
-        self._riego_id = riego_id
-        self._zona_idx = zona_idx
+        self._zone_id = zone_id
         self._entry = entry
 
-        riego_label = riego_data.get("label") or f"Riego {chr(65 + riego_id)}"
-        self._attr_unique_id = f"{entry.entry_id}_riego_{riego_id}_z_{zona_idx + 1}_duration"
-        self._attr_name = f"{riego_label} Zona {zona_idx + 1} Duración"
+        zone_label = zone_data.get("label") or str(zone_id + 1)
+        self._attr_unique_id = f"{entry.entry_id}_zone_{zone_id}_duration_set"
+        self._attr_name = f"Zona {zone_label} Duración"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -166,18 +158,19 @@ class HidromoticRiegoZonaDurationNumber(CoordinatorEntity[HidromoticCoordinator]
 
     @property
     def available(self) -> bool:
-        riegos = self.coordinator.get_riegos()
-        return self._riego_id in riegos and super().available
+        zones = self.coordinator.get_zones()
+        zone = zones.get(self._zone_id)
+        if zone is None or zone.get("estado") == STATE_DISABLED:
+            return False
+        return super().available
 
     @property
     def native_value(self) -> float | None:
-        riego = self.coordinator.get_riegos().get(self._riego_id)
-        if riego and "zonas" in riego:
-            return float(riego["zonas"].get(f"duracion_{self._zona_idx + 1}", 0))
-        return 0
+        zone = self.coordinator.get_zones().get(self._zone_id)
+        if zone is None:
+            return None
+        return float(zone.get("duracion", 0))
 
     async def async_set_native_value(self, value: float) -> None:
         minutes = int(value)
-        await self.coordinator.client.set_riego_zona_duration(
-            self._riego_id, self._zona_idx, minutes
-        )
+        await self.coordinator.client.set_output_duration("zones", self._zone_id, minutes)

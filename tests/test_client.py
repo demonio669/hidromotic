@@ -29,6 +29,24 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
         client._send_command.assert_awaited_once_with("#@HAZAD42;#@+;")
         self.assertEqual(client.data["riegos"][10]["zonas"]["duracion_11"], 42)
 
+    async def test_zone_output_duration_does_not_change_irrigation_programs(self) -> None:
+        client = HidromoticClient("localhost")
+        client._send_command = AsyncMock()
+        client.data["zones"] = {1: {"slot_id": 10, "duracion": 5}}
+        client.data["riegos"] = {
+            0: {"slot_id": 0, "zonas": {"duracion_2": 10}},
+            1: {"slot_id": 1, "zonas": {"duracion_2": 20}},
+        }
+
+        await client.set_output_duration("zones", 1, 35)
+
+        client._send_command.assert_awaited_once_with("#@SAD35;#@+;")
+        self.assertEqual(client.data["zones"][1]["duracion"], 35)
+        self.assertEqual(
+            [riego["zonas"]["duracion_2"] for riego in client.data["riegos"].values()],
+            [10, 20],
+        )
+
     async def test_running_frame_offsets_and_auto_irrigation_state(self) -> None:
         client = HidromoticClient("localhost")
         client.data["pic_version"] = 1
