@@ -9,8 +9,8 @@ from custom_components.hidromotic.cloud_client import HidromoticCloudClient
 
 class FakeResponse:
     def __init__(self) -> None:
-        self.read = AsyncMock(return_value=b"")
-        self.raise_for_status = MagicMock()
+        self.status = 303
+        self.headers = {"Location": "/"}
 
     async def __aenter__(self) -> "FakeResponse":
         return self
@@ -51,10 +51,12 @@ class HidromoticCloudClientTests(unittest.IsolatedAsyncioTestCase):
 
         session.post.assert_called_once_with(
             "https://hidromotic.com/",
-            data={"u": "account", "p": "password"},
+            data={
+                "u": "account",
+                "p": "5f4dcc3b5aa765d61d8327deb882cf99",
+            },
+            allow_redirects=False,
         )
-        response.read.assert_awaited_once()
-        response.raise_for_status.assert_called_once()
         session.ws_connect.assert_awaited_once_with(
             "wss://hidromotic.com/ws",
             heartbeat=30,
@@ -65,6 +67,17 @@ class HidromoticCloudClientTests(unittest.IsolatedAsyncioTestCase):
         )
         await client.disconnect()
         self.assertTrue(websocket.closed)
+
+    async def test_login_rejects_response_without_success_redirect(self) -> None:
+        response = FakeResponse()
+        response.status = 200
+        session = MagicMock()
+        session.post.return_value = response
+        session.ws_connect = AsyncMock()
+        client = HidromoticCloudClient("account", "password", session=session)
+
+        self.assertFalse(await client.connect())
+        session.ws_connect.assert_not_awaited()
 
     async def test_commands_are_sent_as_raw_cloud_protocol_text(self) -> None:
         websocket = BlockingWebSocket()

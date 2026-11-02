@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 
 import aiohttp
@@ -38,10 +39,17 @@ class HidromoticCloudClient(HidromoticClient):
 
             async with self._session.post(
                 self.LOGIN_URL,
-                data={"u": self._username, "p": self._password},
+                data={
+                    "u": self._username,
+                    "p": hashlib.md5(
+                        self._password.encode("utf-8"),
+                        usedforsecurity=False,
+                    ).hexdigest(),
+                },
+                allow_redirects=False,
             ) as response:
-                await response.read()
-                response.raise_for_status()
+                if response.status != 303 or response.headers.get("Location") != "/":
+                    raise HomeAssistantError("Inicio de sesión Cloud rechazado")
 
             self._ws = await self._session.ws_connect(
                 self.WEBSOCKET_URL,
