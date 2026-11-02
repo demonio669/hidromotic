@@ -33,6 +33,7 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = client
         self._remove_callback: Callable[[], None] | None = None
+        self._has_received_initial_data = False
 
     async def async_setup(self) -> bool:
         """Configura callbacks e inicia la conexión."""
@@ -67,7 +68,17 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @callback
     def _on_data_update(self, data: dict[str, Any]) -> None:
         """Handle data update from WebSocket."""
-        self.async_set_updated_data(data)
+        if self.client.connected and self.client.data_ready.is_set():
+            if self._has_received_initial_data and not self.last_update_success:
+                _LOGGER.info("Connection to Hidromotic at %s restored", self.client.host)
+            self._has_received_initial_data = True
+            self.async_set_updated_data(data)
+            return
+
+        if self._has_received_initial_data and self.last_update_success:
+            _LOGGER.info("Connection to Hidromotic at %s was lost", self.client.host)
+            self.last_update_success = False
+            self.async_update_listeners()
 
     async def async_set_zone_state(self, zone_id: int, on: bool) -> None:
         await self.client.set_zone_state(zone_id, on)

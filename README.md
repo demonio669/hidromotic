@@ -27,8 +27,10 @@ y reiniciá Home Assistant.
 
 1. En Home Assistant, abrí **Ajustes > Dispositivos y servicios**.
 2. Seleccioná **Añadir integración** y buscá **Hidromotic**.
-3. Ingresá la dirección IP o el nombre de host del CHI en la red local. No
-   incluyas `http://` ni `https://`.
+3. En el campo **Host**, ingresá la dirección IP o el nombre de host del CHI
+   en la red local. Podés encontrar la IP en la lista de dispositivos/DHCP del
+   router o en la configuración de red del equipo. No incluyas `http://` ni
+   `https://`.
 4. Confirmá para finalizar. El dispositivo debe estar encendido y accesible
    desde Home Assistant durante la configuración.
 

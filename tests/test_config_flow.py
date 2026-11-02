@@ -4,7 +4,11 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.hidromotic.config_flow import CannotConnect, validate_input
+from custom_components.hidromotic.config_flow import (
+    CannotConnect,
+    HidromoticConfigFlow,
+    validate_input,
+)
 
 
 class HidromoticConfigFlowValidationTests(unittest.IsolatedAsyncioTestCase):
@@ -63,3 +67,100 @@ class HidromoticConfigFlowValidationTests(unittest.IsolatedAsyncioTestCase):
                 await validate_input(MagicMock(), {"host": "chi.local"})
 
         client.disconnect.assert_awaited_once()
+
+    async def test_validate_input_rejects_failed_connection(self) -> None:
+        client = MagicMock()
+        client.connect = AsyncMock(return_value=False)
+        client.disconnect = AsyncMock()
+
+        with (
+            patch(
+                "custom_components.hidromotic.config_flow.async_get_clientsession",
+                return_value=object(),
+            ),
+            patch(
+                "custom_components.hidromotic.config_flow.HidromoticClient",
+                return_value=client,
+            ),
+        ):
+            with self.assertRaises(CannotConnect):
+                await validate_input(MagicMock(), {"host": "chi.local"})
+
+        client.disconnect.assert_awaited_once()
+
+    async def test_validate_input_maps_initial_data_timeout(self) -> None:
+        client = MagicMock()
+        client.connect = AsyncMock(return_value=True)
+        client.disconnect = AsyncMock()
+        client.data_ready = asyncio.Event()
+        client.mac_ready = asyncio.Event()
+        client.data = {}
+
+        with (
+            patch(
+                "custom_components.hidromotic.config_flow.async_get_clientsession",
+                return_value=object(),
+            ),
+            patch(
+                "custom_components.hidromotic.config_flow.HidromoticClient",
+                return_value=client,
+            ),
+            patch(
+                "custom_components.hidromotic.config_flow.INITIAL_DATA_WAIT_SECONDS",
+                0.001,
+            ),
+        ):
+            with self.assertRaises(CannotConnect):
+                await validate_input(MagicMock(), {"host": "chi.local"})
+
+        client.disconnect.assert_awaited_once()
+
+    async def test_user_flow_shows_form_and_maps_connection_errors(self) -> None:
+        flow = HidromoticConfigFlow()
+        form = await flow.async_step_user()
+        self.assertEqual(form["step_id"], "user")
+
+        with patch(
+            "custom_components.hidromotic.config_flow.validate_input",
+            AsyncMock(side_effect=CannotConnect),
+        ):
+            result = await flow.async_step_user({"host": "chi.local"})
+        self.assertEqual(result["type"], "form")
+        self.assertEqual(result["errors"], {"base": "cannot_connect"})
+
+    async def test_user_flow_maps_unexpected_errors(self) -> None:
+        flow = HidromoticConfigFlow()
+        with patch(
+            "custom_components.hidromotic.config_flow.validate_input",
+            AsyncMock(side_effect=RuntimeError("unexpected")),
+        ):
+            result = await flow.async_step_user({"host": "chi.local"})
+
+        self.assertEqual(result["type"], "form")
+        self.assertEqual(result["errors"], {"base": "unknown"})
+
+    async def test_user_flow_creates_entry_for_valid_device(self) -> None:
+        flow = HidromoticConfigFlow()
+        flow.async_set_unique_id = AsyncMock()
+        flow._abort_if_unique_id_configured = MagicMock()
+        flow.async_create_entry = MagicMock(return_value={"type": "create_entry"})
+
+        with patch(
+            "custom_components.hidromotic.config_flow.validate_input",
+            AsyncMock(
+                return_value={
+                    "title": "CHI Smart (chi.local)",
+                    "device_id": "aabbccddeeff",
+                }
+            ),
+        ):
+            result = await flow.async_step_user({"host": "chi.local"})
+
+        self.assertEqual(result, {"type": "create_entry"})
+        flow.async_set_unique_id.assert_awaited_once_with("aabbccddeeff")
+        flow._abort_if_unique_id_configured.assert_called_once_with(
+            updates={"host": "chi.local"}
+        )
+        flow.async_create_entry.assert_called_once_with(
+            title="CHI Smart (chi.local)", data={"host": "chi.local"}
+        )

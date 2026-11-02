@@ -31,18 +31,31 @@ rules:
       The integration does not provide any actions.
   runtime-data: done
   # Silver
-  log-when-unavailable: todo
+  log-when-unavailable: done
   config-entry-unloading: done
-  reauthentication-flow: todo
+  reauthentication-flow:
+    status: exempt
+    comment: |
+      The CHI device does not use credentials that can expire or be changed.
   action-exceptions:
     status: exempt
     comment: |
       The integration does not provide any actions.
-  docs-installation-parameters: todo
+  docs-installation-parameters:
+    status: todo
+    comment: |
+      The README documents the Host field, and Documentacion/h.js is a reverse-engineered
+      technical reference for the CHI protocol. This repository is a HACS custom
+      integration, not a Home Assistant Core integration; the official Core
+      quality-scale tier and its home-assistant.io documentation requirement do
+      not govern publishing or using this repository.
   integration-owner: done
-  parallel-updates: todo
-  test-coverage: todo
-  docs-configuration-parameters: todo
+  parallel-updates: done
+  test-coverage: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: |
+      The integration has no options flow and no post-setup configuration parameters.
   entity-unavailable: done
 
   # Gold

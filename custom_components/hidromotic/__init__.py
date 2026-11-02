@@ -11,6 +11,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import HidromoticClient, hex_to_int, int_to_hex, normalize_mac_address
+from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)

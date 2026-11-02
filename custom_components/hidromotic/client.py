@@ -131,8 +131,7 @@ class HidromoticClient:
             url = f"ws://{self.host}/rpc"
             _LOGGER.debug("Connecting to %s", url)
             self._ws = await self._session.ws_connect(url, heartbeat=30)
-            self._connected = True
-            _LOGGER.info("Connected to Hidromotic at %s", self.host)
+            self._set_connected(True)
 
             self._listener_task = asyncio.create_task(self._listen())
 
@@ -140,8 +139,8 @@ class HidromoticClient:
             await self._send_command("#@C;")
             await self._send_command("#@EY;")
         except Exception as err:
-            _LOGGER.error("Failed to connect to Hidromotic: %s", err)
-            self._connected = False
+            _LOGGER.debug("Failed to connect to Hidromotic: %s", err)
+            self._set_connected(False)
             return False
         else:
             return True
@@ -149,8 +148,11 @@ class HidromoticClient:
     async def disconnect(self) -> None:
         """Cierra la conexión WebSocket y cancela las tareas activas."""
         self._should_reconnect = False
+        was_available = self._connected or self.data_ready.is_set()
         self._connected = False
         self.data_ready.clear()
+        if was_available:
+            self._notify_callbacks()
 
         if self._reconnect_task:
             self._reconnect_task.cancel()
@@ -166,9 +168,17 @@ class HidromoticClient:
                 pass
         if self._ws:
             await self._ws.close()
+            self._ws = None
         if self._session and self._owns_session:
             await self._session.close()
             self._session = None
+
+    def _set_connected(self, connected: bool) -> None:
+        """Notify listeners when the WebSocket connection changes state."""
+        if self._connected == connected:
+            return
+        self._connected = connected
+        self._notify_callbacks()
 
     async def _send_command(self, command: str) -> None:
         """Envía un comando en formato JSON-RPC al WebSocket."""
@@ -209,18 +219,21 @@ class HidromoticClient:
                 elif msg.type == aiohttp.WSMsgType.TEXT:
                     await self._process_text(msg.data)
                 elif msg.type == aiohttp.WSMsgType.ERROR:
-                    _LOGGER.error("WebSocket error: %s", msg.data)
+                    _LOGGER.debug("WebSocket closed with error: %s", msg.data)
                     break
                 elif msg.type == aiohttp.WSMsgType.CLOSED:
-                    _LOGGER.info("WebSocket closed")
+                    _LOGGER.debug("WebSocket closed")
                     break
         except asyncio.CancelledError:
             raise
         except Exception as err:
-            _LOGGER.error("Error in WebSocket listener: %s", err)
+            _LOGGER.debug("WebSocket listener stopped: %s", err)
         finally:
+            was_available = self._connected or self.data_ready.is_set()
             self._connected = False
             self.data_ready.clear()
+            if was_available:
+                self._notify_callbacks()
             if self._should_reconnect:
                 self._reconnect_task = asyncio.create_task(self._reconnect())
 
@@ -228,7 +241,7 @@ class HidromoticClient:
         """Bucle para gestionar los reintentos automáticos de reconexión."""
         self.data_ready.clear()
         while self._should_reconnect and not self._connected:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Attempting to reconnect to Hidromotic in %d seconds",
                 self.RECONNECT_INTERVAL,
             )
@@ -237,7 +250,7 @@ class HidromoticClient:
                 break
             try:
                 if await self.connect():
-                    _LOGGER.info("Reconnected to Hidromotic")
+                    _LOGGER.debug("Reconnected to Hidromotic")
                     break
             except Exception as err:
                 _LOGGER.debug("Reconnection attempt failed: %s", err)
