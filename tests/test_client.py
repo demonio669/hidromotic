@@ -117,6 +117,99 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(client.data["lluvia_bloqueado"])
         self.assertEqual(client.data["uart_reset_count"], 0x1234)
 
+    async def test_full_config_consumes_sections_before_matching_marker_bytes(self) -> None:
+        client = HidromoticClient("localhost")
+        frame = bytearray(16)
+        frame[0] = ord("C")
+        frame[1] = ord("M")
+        frame[6] = 0x42
+        pump = bytearray(17)
+        pump[0] = ord("B")
+        pump[1] = 1
+        pump[3] = ord("S")
+        frame.extend(pump)
+        frame.extend([ord("S"), *([0] * (6 * 6))])
+        frame.extend([ord("R"), 1, 2, 0])
+
+        await client._parse_full_config(bytes(frame))
+
+        self.assertTrue(client.data_ready.is_set())
+        self.assertEqual(client.data["pump"]["marcha"], ord("S"))
+        self.assertTrue(client.data["auto_riego"])
+        self.assertEqual(client.data["active_horario"], 2)
+        self.assertFalse(client.data["lluvia_bloqueado"])
+        self.assertEqual(client.data["outputs"], {})
+
+    async def test_full_config_parses_program_label_as_data(self) -> None:
+        client = HidromoticClient("localhost")
+        frame = bytearray(16)
+        frame[0] = ord("C")
+        frame[1] = ord("M")
+        frame[6] = 0x42
+        frame.extend([ord("S"), *([0] * (6 * 6))])
+        frame.extend([ord("R"), 1, 0, 0])
+
+        riego = bytearray(28)
+        riego[0] = ord("H")
+        riego[1] = 0
+        riego[2] = 1
+        riego[10] = 1
+        riego[15] = 25
+        riego[27] = 3
+        frame.extend(riego)
+        frame.extend(b"RHS")
+
+        await client._parse_full_config(bytes(frame))
+
+        self.assertEqual(client.data["riegos"][0]["label"], "RHS")
+        self.assertEqual(client.data["riegos"][0]["zonas"]["duracion_1"], 25)
+        self.assertTrue(client.data["auto_riego"])
+
+    async def test_full_config_preserves_zero_based_output_slots(self) -> None:
+        client = HidromoticClient("localhost")
+        frame = bytearray(16)
+        frame[0] = ord("C")
+        frame[1] = ord("M")
+        frame[6] = 0x42
+        frame.extend([ord("S"), *([0] * 6)])
+        frame.extend([0x41, 1, 60, 0, 0, 0])
+        frame.extend([0] * (4 * 6))
+        frame.extend([ord("R"), 0, 0, 0])
+
+        await client._parse_full_config(bytes(frame))
+
+        self.assertEqual(client.data["zones"][0]["slot_id"], 1)
+        self.assertEqual(list(client.data["outputs"]), [1])
+        self.assertEqual(client.data["outputs"][1]["slot_id"], 1)
+
+    async def test_truncated_full_config_does_not_mark_data_ready(self) -> None:
+        client = HidromoticClient("localhost")
+
+        await client._parse_full_config(bytes([ord("C"), ord("M")]))
+
+        self.assertFalse(client.data_ready.is_set())
+
+        frame = bytearray(16)
+        frame[0] = ord("C")
+        frame[1] = ord("M")
+        frame.extend([ord("S"), 0x41, 1, 2])
+        await client._parse_full_config(bytes(frame))
+
+        self.assertFalse(client.data_ready.is_set())
+        self.assertEqual(client.data["zones"], {})
+
+    async def test_truncated_running_section_does_not_update_state(self) -> None:
+        client = HidromoticClient("localhost")
+        client.data["pic_version"] = 1
+        client.data["inputs"] = {
+            0: {"id": 0, "invert": False, "estado": False, "raw_estado": False}
+        }
+
+        await client._parse_running_data(bytes([ord("D"), 0, 0, 0, 0, 0, ord("E"), 0]))
+
+        self.assertFalse(client.data["inputs"][0]["estado"])
+        self.assertFalse(client.data["inputs"][0]["raw_estado"])
+
     async def test_json_updates_notify_registered_callbacks(self) -> None:
         client = HidromoticClient("localhost")
         updates: list[dict] = []

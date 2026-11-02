@@ -312,29 +312,37 @@ class HidromoticClient:
 
         self._notify_callbacks()
 
-    async def _parse_full_config(self, data: bytes) -> None:
-        """Parsea la trama binaria inicial con la configuración completa del sistema."""
+    async def _parse_full_config(self, data: bytes) -> bool:
+        """Parsea secciones de configuración respetando el cursor y sus longitudes."""
+        if len(data) < 16 or data[0] != ord("C"):
+            _LOGGER.warning("Ignoring truncated or invalid full configuration frame")
+            return False
+
+        self.data_ready.clear()
         is_mini = data[1] == 77
         max_outputs = 6 if is_mini else 12
+        riego_header_size = 28 if is_mini else 40
+        max_riego_zonas = 6 if is_mini else 12
 
         self._data["is_mini"] = is_mini
         self._data["pic_name"] = "CHI Smart Mini" if is_mini else "CHI Smart"
         self._data["pic_version"] = data[2] | (data[3] << 8)
         self._data["pic_id"] = f"0x{data[6]:02X}"
-        self._data["pic_rev"] = data[7] if len(data) > 7 else 0
+        self._data["pic_rev"] = data[7]
 
-        if len(data) >= 16:
-            bcd_to_hex = lambda v: (((v & 0xF0) >> 4) * 10) + (v & 0x0F)
-            try:
-                year = 2000 + bcd_to_hex(data[10])
-                month = bcd_to_hex(data[9])
-                day = bcd_to_hex(data[12])
-                hour = bcd_to_hex(data[14])
-                minute = bcd_to_hex(data[13])
-                second = bcd_to_hex(data[15])
-                self._data["pic_fecha"] = f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}"
-            except Exception:
-                self._data["pic_fecha"] = "unknown"
+        def bcd_to_int(value: int) -> int:
+            return (((value & 0xF0) >> 4) * 10) + (value & 0x0F)
+
+        year = 2000 + bcd_to_int(data[10])
+        month = bcd_to_int(data[9])
+        day = bcd_to_int(data[12])
+        hour = bcd_to_int(data[14])
+        minute = bcd_to_int(data[13])
+        second = bcd_to_int(data[15])
+        self._data["pic_fecha"] = (
+            f"{year:04d}-{month:02d}-{day:02d} "
+            f"{hour:02d}:{minute:02d}:{second:02d}"
+        )
 
         self._data["zones"] = {}
         self._data["tanks"] = {}
@@ -347,275 +355,255 @@ class HidromoticClient:
         self._data["outputs"] = {}
         self._data["outputs_by_tipo"] = {}
         self._data["tareas"] = {}
+        self._data.setdefault("auto_riego", True)
 
-        if "auto_riego" not in self._data:
-            self._data["auto_riego"] = True
-
-        b_pos, s_pos, e_pos, r_pos = None, None, None, None
-
-        for idx in range(16, len(data)):
-            if data[idx] == 0x42 and b_pos is None:
-                b_pos = idx
-            elif data[idx] == 0x45 and e_pos is None:
-                e_pos = idx
-            elif data[idx] == 0x53 and s_pos is None:
-                s_pos = idx
-                break
-
-        if b_pos is not None and b_pos + 6 < len(data):
-            marcha = (
-                data[b_pos + 3]
-                | (data[b_pos + 4] << 8)
-                | (data[b_pos + 5] << 16)
-                | (data[b_pos + 6] << 24)
+        def truncated(section: str, offset: int) -> bool:
+            _LOGGER.warning(
+                "Truncated full configuration section %s at offset %d",
+                section,
+                offset,
             )
-            self._data["pump"] = {
-                "estado": data[b_pos + 1],
-                "pausa_externa": data[b_pos + 2],
-                "marcha": marcha,
-            }
-            idx_b = b_pos + 7
-            if idx_b + 9 < len(data):
-                self._data["pump"]["t0_offduracion"] = data[idx_b] | (data[idx_b + 1] << 8)
-                self._data["pump"]["t1_ondelay"] = data[idx_b + 2] | (data[idx_b + 3] << 8)
-                self._data["pump"]["t2_desactivando"] = data[idx_b + 4] | (data[idx_b + 5] << 8)
-                self._data["pump"]["t3_pozoseco"] = data[idx_b + 6] | (data[idx_b + 7] << 8)
-                self._data["pump"]["t4_pozoseco_auto_recover"] = data[idx_b + 8] | (data[idx_b + 9] << 8)
+            return False
 
-        if e_pos is not None:
-            idx = e_pos + 1
-            for j in range(4):
-                if idx + 3 < len(data):
-                    tipo = data[idx]
-                    invert = data[idx + 1] == 1
-                    actual = data[idx + 2]
-                    raw_estado = data[idx + 3] == 1
-                    effective_state = raw_estado ^ invert
+        i = 16
+        outputs_seen = False
+        while i < len(data):
+            section = data[i]
+            remaining = len(data) - i
 
-                    self._data["inputs"][j] = {
-                        "id": j,
+            if section == ord("B"):
+                if remaining < 17:
+                    return truncated("B", i)
+                self._data["pump"] = {
+                    "estado": data[i + 1],
+                    "pausa_externa": data[i + 2],
+                    "marcha": int.from_bytes(data[i + 3 : i + 7], "little"),
+                    "t0_offduracion": int.from_bytes(data[i + 7 : i + 9], "little"),
+                    "t1_ondelay": int.from_bytes(data[i + 9 : i + 11], "little"),
+                    "t2_desactivando": int.from_bytes(data[i + 11 : i + 13], "little"),
+                    "t3_pozoseco": int.from_bytes(data[i + 13 : i + 15], "little"),
+                    "t4_pozoseco_auto_recover": int.from_bytes(
+                        data[i + 15 : i + 17], "little"
+                    ),
+                }
+                i += 17
+
+            elif section == ord("E"):
+                if remaining < 17:
+                    return truncated("E", i)
+                inputs = {}
+                for input_id in range(4):
+                    offset = i + 1 + input_id * 4
+                    tipo = data[offset]
+                    invert = data[offset + 1] == 1
+                    raw_estado = data[offset + 3] == 1
+                    inputs[input_id] = {
+                        "id": input_id,
                         "tipo": tipo,
                         "tipo_name": INPUT_TYPE_MAP.get(tipo, f"Tipo {tipo}"),
                         "invert": invert,
-                        "actual": actual,
+                        "actual": data[offset + 2],
                         "raw_estado": raw_estado,
-                        "estado": effective_state,
+                        "estado": raw_estado ^ invert,
                     }
-                    idx += 4
+                self._data["inputs"] = inputs
+                i += 17
 
-        if s_pos is None:
-            _LOGGER.warning("No 'S' section marker found in config data")
-            return
-
-        i = s_pos + 1
-        slot_id = 0
-
-        while i < len(data) - 6 and slot_id < max_outputs:
-            tipo = data[i]
-
-            if tipo == 0x00:
-                i += 6
-                slot_id += 1
-                continue
-
-            is_zone = 0x41 <= tipo <= 0x4C
-            is_tank = 0x21 <= tipo <= 0x2C
-            is_pileta = 0x51 <= tipo <= 0x5C
-            is_manguera = 0x11 <= tipo <= 0x1C
-            is_ciclon = 0x61 <= tipo <= 0x6C
-
-            if not (is_zone or is_tank or is_pileta or is_manguera or is_ciclon):
+            elif section == ord("S"):
+                outputs_seen = True
                 i += 1
-                continue
+                for slot_id in range(max_outputs):
+                    if len(data) - i < 6:
+                        return truncated("S", i)
 
-            if i + 5 >= len(data):
-                break
+                    tipo, bomba = data[i], data[i + 1]
+                    duracion = data[i + 2] | (data[i + 3] << 8)
+                    estado = data[i + 4]
+                    label_len = data[i + 5]
+                    i += 6
 
-            bomba = data[i + 1]
-            duracion = data[i + 2] | (data[i + 3] << 8)
-            estado = data[i + 4]
-            label_len = data[i + 5]
+                    if label_len > 32 or len(data) - i < label_len:
+                        return truncated("S label", i - 1)
+                    label = data[i : i + label_len].decode("utf-8", errors="ignore")
+                    i += label_len
 
-            if bomba > 1 or estado > STATE_DISABLED:
-                i += 1
-                continue
+                    if tipo == 0:
+                        continue
 
-            label = ""
-            if 0 < label_len <= 32 and i + 6 + label_len <= len(data):
-                try:
-                    label = data[i + 6 : i + 6 + label_len].decode("utf-8", errors="ignore")
-                except UnicodeDecodeError:
-                    label = ""
-                    label_len = 0
-            else:
-                label_len = 0
+                    is_zone = 0x41 <= tipo <= 0x4C
+                    is_tank = 0x21 <= tipo <= 0x2C
+                    is_pileta = 0x51 <= tipo <= 0x5C
+                    is_manguera = 0x11 <= tipo <= 0x1C
+                    is_ciclon = 0x61 <= tipo <= 0x6C
+                    tipo_id = (tipo & 0x0F) - 1
+                    if tipo_id < 0:
+                        _LOGGER.warning("Invalid output type 0x%02X in slot %d", tipo, slot_id)
+                        continue
 
-            modo, etc, nivel = 0, 0, 0
-            modo_ante_tareas, d_ante_tareas = 0, 0
-            modo_fin_de_tareas, d_fin_de_tareas = 0, 0
-            modo_tiempo, bomba_marcha_duracion, proximo_ciclon = 0, 0, 0
+                    extra_size = 0
+                    if estado != STATE_DISABLED and is_tank:
+                        extra_size = 3
+                    elif estado != STATE_DISABLED and is_ciclon:
+                        extra_size = 10
+                    if len(data) - i < extra_size:
+                        return truncated("S output details", i)
+                    extras = data[i : i + extra_size]
+                    i += extra_size
 
-            header_size = 6
+                    output_data = {
+                        "id": tipo_id,
+                        "slot_id": slot_id,
+                        "tipo": f"{tipo:02X}",
+                        "tipo_raw": tipo,
+                        "bomba": bomba,
+                        "duracion": duracion,
+                        "estado": estado,
+                        "label": label,
+                    }
+                    self._data["outputs"][slot_id] = output_data
+                    self._data["outputs_by_tipo"][tipo] = output_data
 
-            if is_tank and estado != STATE_DISABLED:
-                header_size = 9
-                if i + 6 + label_len + 2 < len(data):
-                    modo = data[i + 6 + label_len]
-                    etc = data[i + 6 + label_len + 1]
-                    nivel = data[i + 6 + label_len + 2]
+                    if is_zone:
+                        self._data["zones"][tipo_id] = {
+                            "id": tipo_id,
+                            "slot_id": slot_id,
+                            "estado": estado,
+                            "label": label or f"Zona {tipo_id + 1}",
+                            "duracion": duracion,
+                        }
+                    elif is_tank:
+                        self._data["tanks"][tipo_id] = {
+                            "id": tipo_id,
+                            "slot_id": slot_id,
+                            "estado": estado,
+                            "label": label or f"Tanque {tipo_id + 1}",
+                            "nivel": extras[2] if extras else 0,
+                            "modo": extras[0] if extras else 0,
+                            "etc": extras[1] if extras else 0,
+                        }
+                    elif is_pileta:
+                        self._data["pools"][tipo_id] = {
+                            "id": tipo_id,
+                            "slot_id": slot_id,
+                            "estado": estado,
+                            "label": label or f"Piscina {tipo_id + 1}",
+                            "duracion": duracion,
+                        }
+                    elif is_manguera:
+                        self._data["mangueras"][tipo_id] = {
+                            "id": tipo_id,
+                            "slot_id": slot_id,
+                            "estado": estado,
+                            "label": label or f"Manguera {tipo_id + 1}",
+                            "duracion": duracion,
+                        }
+                    elif is_ciclon:
+                        self._data["ciclon"][tipo_id] = {
+                            "id": tipo_id,
+                            "slot_id": slot_id,
+                            "estado": estado,
+                            "label": label or f"Ciclon {tipo_id + 1}",
+                            "duracion": duracion,
+                            "modo_ante_tareas": extras[0] if extras else 0,
+                            "modo_fin_de_tareas": extras[1] if extras else 0,
+                            "modo_tiempo": extras[2] if extras else 0,
+                            "d_ante_tareas": int.from_bytes(extras[3:5], "little")
+                            if extras
+                            else 0,
+                            "d_fin_de_tareas": extras[5] if extras else 0,
+                            "bomba_marcha_duracion": int.from_bytes(extras[6:8], "little")
+                            if extras
+                            else 0,
+                            "proximo_ciclon": int.from_bytes(extras[8:10], "little")
+                            if extras
+                            else 0,
+                        }
 
-            if is_ciclon and estado != STATE_DISABLED:
-                header_size = 16
-                base_idx = i + 6 + label_len
-                if base_idx + 9 < len(data):
-                    modo_ante_tareas = data[base_idx]
-                    modo_fin_de_tareas = data[base_idx + 1]
-                    modo_tiempo = data[base_idx + 2]
-                    d_ante_tareas = data[base_idx + 3] | (data[base_idx + 4] << 8)
-                    d_fin_de_tareas = data[base_idx + 5]
-                    bomba_marcha_duracion = data[base_idx + 6] | (data[base_idx + 7] << 8)
-                    proximo_ciclon = data[base_idx + 8] | (data[base_idx + 9] << 8)
-
-            if estado == STATE_DISABLED:
-                header_size = 6
-
-            tipo_id = (tipo & 0x0F) - 1
-
-            output_data = {
-                "id": tipo_id,
-                "slot_id": slot_id,
-                "tipo": f"{tipo:02X}",
-                "tipo_raw": tipo,
-                "bomba": bomba,
-                "duracion": duracion,
-                "estado": estado,
-                "label": label,
-            }
-
-            i += header_size + label_len
-            slot_id += 1
-
-            if estado == STATE_DISABLED:
-                continue
-
-            self._data["outputs"][slot_id] = output_data
-            self._data["outputs_by_tipo"][tipo] = output_data
-
-            if is_zone:
-                self._data["zones"][tipo_id] = {
-                    "id": tipo_id,
-                    "slot_id": output_data["slot_id"],
-                    "estado": estado,
-                    "label": label or f"Zona {tipo_id + 1}",
-                    "duracion": duracion,
-                }
-            elif is_tank:
-                self._data["tanks"][tipo_id] = {
-                    "id": tipo_id,
-                    "slot_id": output_data["slot_id"],
-                    "estado": estado,
-                    "label": label or f"Tanque {tipo_id + 1}",
-                    "nivel": nivel,
-                    "modo": modo,
-                    "etc": etc,
-                }
-            elif is_pileta:
-                self._data["pools"][tipo_id] = {
-                    "id": tipo_id,
-                    "slot_id": output_data["slot_id"],
-                    "estado": estado,
-                    "label": label or f"Piscina {tipo_id + 1}",
-                    "duracion": duracion,
-                }
-            elif is_manguera:
-                self._data["mangueras"][tipo_id] = {
-                    "id": tipo_id,
-                    "slot_id": output_data["slot_id"],
-                    "estado": estado,
-                    "label": label or f"Manguera {tipo_id + 1}",
-                    "duracion": duracion,
-                }
-            elif is_ciclon:
-                self._data["ciclon"][tipo_id] = {
-                    "id": tipo_id,
-                    "slot_id": output_data["slot_id"],
-                    "estado": estado,
-                    "label": label or f"Ciclon {tipo_id + 1}",
-                    "duracion": duracion,
-                    "modo_ante_tareas": modo_ante_tareas,
-                    "modo_fin_de_tareas": modo_fin_de_tareas,
-                    "modo_tiempo": modo_tiempo,
-                    "d_ante_tareas": d_ante_tareas,
-                    "d_fin_de_tareas": d_fin_de_tareas,
-                    "bomba_marcha_duracion": bomba_marcha_duracion,
-                    "proximo_ciclon": proximo_ciclon,
-                }
-
-        for idx in range(i, len(data)):
-            if data[idx] == 0x52 and r_pos is None:
-                r_pos = idx
-            elif data[idx] == 0x62 and "bateria" not in self._data:
-                if idx + 2 < len(data):
-                    self._data["bateria"] = data[idx + 1] | (data[idx + 2] << 8)
-            elif data[idx] == 0x75:
-                if idx + 3 < len(data):
-                    self._data["uart_reset_count"] = data[idx + 2] | (data[idx + 3] << 8)
-            elif data[idx] == 0x63:
-                if idx + 2 < len(data):
-                    self._data["esp_reset_count"] = data[idx + 1] | (data[idx + 2] << 8)
-
-        if r_pos is not None and r_pos + 3 < len(data):
-            self._data["auto_riego"] = data[r_pos + 1] != 0
-            self._data["active_horario"] = data[r_pos + 2]
-            self._data["lluvia_bloqueado"] = data[r_pos + 3] == 1
-
-        riego_header_size = 28 if is_mini else 40
-        max_riego_zonas = 6 if is_mini else 12
-
-        while i < len(data):
-            tipo_riego = data[i]
-
-            if tipo_riego != 0x48:
-                i += 1
-                continue
-
-            if i + (26 if is_mini else 38) < len(data):
+            elif section == ord("H"):
+                if remaining < riego_header_size:
+                    return truncated("H", i)
                 riego_id = data[i + 1]
-                riego_estado = data[i + 2]
-                riego_enabled = data[i + 10]
+                label_len = data[i + riego_header_size - 1]
+                if len(data) - (i + riego_header_size) < label_len:
+                    return truncated("H label", i + riego_header_size - 1)
                 riego_label = f"Riego {chr(65 + riego_id)}"
-                riego_use_sensor_lluvia = data[i + 9]
-
+                if label_len:
+                    custom_label = data[
+                        i + riego_header_size : i + riego_header_size + label_len
+                    ].decode("utf-8", errors="ignore")
+                    if custom_label.strip():
+                        riego_label = custom_label
                 zonas_duracion = {}
-                for z_idx in range(max_riego_zonas):
-                    pos = i + 15 + (z_idx * 2)
-                    if pos + 1 < len(data):
-                        zonas_duracion[f"duracion_{z_idx + 1}"] = data[pos] | (data[pos + 1] << 8)
-
-                label_offset = i + (26 if is_mini else 38) + 1
-                if label_offset < len(data) and data[label_offset] > 0:
-                    custom_label_len = data[label_offset]
-                    if label_offset + 1 + custom_label_len <= len(data):
-                        try:
-                            custom_label = data[label_offset + 1 : label_offset + 1 + custom_label_len].decode("utf-8", errors="ignore")
-                            if custom_label.strip():
-                                riego_label = custom_label
-                        except UnicodeDecodeError:
-                            pass
-
+                for zona_idx in range(max_riego_zonas):
+                    offset = i + 15 + zona_idx * 2
+                    zonas_duracion[f"duracion_{zona_idx + 1}"] = (
+                        data[offset] | (data[offset + 1] << 8)
+                    )
                 self._data["riegos"][riego_id] = {
                     "id": riego_id,
                     "slot_id": riego_id,
-                    "estado": riego_estado,
-                    "enabled": riego_enabled,
+                    "estado": data[i + 2],
+                    "enabled": data[i + 10],
                     "label": riego_label,
-                    "use_sensor_lluvia": riego_use_sensor_lluvia,
+                    "use_sensor_lluvia": data[i + 9],
                     "zonas": zonas_duracion,
                 }
+                i += riego_header_size + label_len
 
-            i += riego_header_size
+            elif section == ord("R"):
+                if remaining < 4:
+                    return truncated("R", i)
+                self._data["auto_riego"] = data[i + 1] != 0
+                self._data["active_horario"] = data[i + 2]
+                self._data["lluvia_bloqueado"] = data[i + 3] == 1
+                i += 4
+
+            elif section == ord("L"):
+                if remaining < 4:
+                    return truncated("L", i)
+                tarea_id = data[i + 1]
+                record_size = 6 if tarea_id == 0 else 4
+                if remaining < record_size:
+                    return truncated("L", i)
+                tarea = {
+                    "id": tarea_id,
+                    "tipo": f"{data[i + 2]:02X}",
+                    "modo": data[i + 3],
+                    "duracion": int.from_bytes(data[i + 4 : i + 6], "little")
+                    if tarea_id == 0
+                    else 0,
+                }
+                self._data["tareas"][tarea_id] = tarea
+                i += record_size
+
+            elif section == ord("b"):
+                if remaining < 3:
+                    return truncated("b", i)
+                self._data["bateria"] = int.from_bytes(data[i + 1 : i + 3], "little")
+                i += 3
+
+            elif section == ord("u"):
+                if remaining < 4:
+                    return truncated("u", i)
+                self._data["uart_reset_count"] = int.from_bytes(data[i + 2 : i + 4], "little")
+                i += 4
+
+            elif section == ord("c"):
+                if remaining < 3:
+                    return truncated("c", i)
+                self._data["esp_reset_count"] = int.from_bytes(data[i + 1 : i + 3], "little")
+                i += 3
+
+            else:
+                _LOGGER.debug("Skipping unknown full configuration byte 0x%02X", section)
+                i += 1
+
+        if not outputs_seen:
+            _LOGGER.warning("No output section found in full configuration")
+            return False
 
         self.data_ready.set()
+        return True
 
     async def _parse_running_data(self, data: bytes) -> None:
         """Parsea actualizaciones parciales en tiempo real enviadas por la placa en la trama 'D'."""
@@ -623,12 +611,24 @@ class HidromoticClient:
             _LOGGER.debug("Ignoring running data received before the full configuration")
             return
 
+        if len(data) < 6 or data[0] != ord("D"):
+            _LOGGER.warning("Ignoring truncated or invalid running data frame")
+            return
+
+        def truncated(section: str, offset: int) -> None:
+            _LOGGER.warning(
+                "Truncated running data section %s at offset %d",
+                section,
+                offset,
+            )
+
         i = 6
         while i < len(data):
-            section = chr(data[i])
+            section = data[i]
+            remaining = len(data) - i
 
-            if section == "B":
-                if i + 6 < len(data):
+            if section == ord("B"):
+                if remaining >= 7:
                     self._data["pump"]["estado"] = data[i + 1]
                     self._data["pump"]["pausa_externa"] = data[i + 2]
                     self._data["pump"]["marcha"] = (
@@ -637,96 +637,135 @@ class HidromoticClient:
                         | (data[i + 5] << 16)
                         | (data[i + 6] << 24)
                     )
-                elif i + 2 < len(data):
+                    i += 7
+                elif remaining >= 3:
                     self._data["pump"]["estado"] = data[i + 1]
                     self._data["pump"]["pausa_externa"] = data[i + 2]
-                i += 7
+                    i += 3
+                else:
+                    truncated("B", i)
+                    return
 
-            elif section == "b":
-                if i + 2 < len(data):
-                    self._data["bateria"] = data[i + 1] | (data[i + 2] << 8)
+            elif section == ord("b"):
+                if remaining < 3:
+                    truncated("b", i)
+                    return
+                self._data["bateria"] = int.from_bytes(data[i + 1 : i + 3], "little")
                 i += 3
 
-            elif section == "E":
-                if i + 2 < len(data):
-                    input_id = data[i + 1]
-                    raw_estado = data[i + 2] == 1
-                    inp = self._data.get("inputs", {}).get(input_id)
-                    if inp:
-                        invert = inp.get("invert", False)
-                        inp["raw_estado"] = raw_estado
-                        inp["estado"] = raw_estado ^ invert
+            elif section == ord("E"):
+                if remaining < 3:
+                    truncated("E", i)
+                    return
+                input_id = data[i + 1]
+                raw_estado = data[i + 2] == 1
+                inp = self._data.get("inputs", {}).get(input_id)
+                if inp:
+                    invert = inp.get("invert", False)
+                    inp["raw_estado"] = raw_estado
+                    inp["estado"] = raw_estado ^ invert
                 i += 3
 
-            elif section == "R":
-                if i + 2 < len(data):
-                    self._data["active_horario"] = data[i + 1]
-                    self._data["lluvia_bloqueado"] = data[i + 2] == 1
+            elif section == ord("R"):
+                if remaining < 3:
+                    truncated("R", i)
+                    return
+                self._data["active_horario"] = data[i + 1]
+                self._data["lluvia_bloqueado"] = data[i + 2] == 1
                 i += 3
 
-            elif section == "S":
-                step = 3
-                if i + 2 < len(data):
-                    tipo = data[i + 1]
-                    estado = data[i + 2]
+            elif section == ord("S"):
+                if remaining < 3:
+                    truncated("S", i)
+                    return
+                tipo = data[i + 1]
+                estado = data[i + 2]
+                tipo_upper = tipo & 0xF0
+                tipo_id = (tipo & 0x0F) - 1
+                tank = self._data.get("tanks", {}).get(tipo_id)
+                ciclon = self._data.get("ciclon", {}).get(tipo_id)
+                extra_size = 4 if tipo_upper == OUTPUT_TYPE_TANQUE else 3
+                if (
+                    tipo_upper == OUTPUT_TYPE_CICLON
+                    and ciclon
+                    and ciclon.get("modo_tiempo")
+                ):
+                    extra_size = 5
+                if remaining < extra_size:
+                    truncated("S", i)
+                    return
 
-                    output = self._data.get("outputs_by_tipo", {}).get(tipo)
-                    if output:
-                        output["estado"] = estado
-                        tipo_upper = tipo & 0xF0
-                        tipo_id = (tipo & 0x0F) - 1
+                output = self._data.get("outputs_by_tipo", {}).get(tipo)
+                if output:
+                    output["estado"] = estado
+                    if tipo_upper == OUTPUT_TYPE_ZONA and tipo_id in self._data["zones"]:
+                        self._data["zones"][tipo_id]["estado"] = estado
+                    elif tipo_upper == OUTPUT_TYPE_TANQUE and tank:
+                        tank["estado"] = estado
+                        tank["nivel"] = data[i + 3]
+                    elif tipo_upper == OUTPUT_TYPE_PISCINA and tipo_id in self._data["pools"]:
+                        self._data["pools"][tipo_id]["estado"] = estado
+                    elif tipo_upper == OUTPUT_TYPE_MANGUERA and tipo_id in self._data["mangueras"]:
+                        self._data["mangueras"][tipo_id]["estado"] = estado
+                    elif tipo_upper == OUTPUT_TYPE_CICLON and ciclon:
+                        ciclon["estado"] = estado
+                        if extra_size == 5:
+                            ciclon["proximo_ciclon"] = int.from_bytes(
+                                data[i + 3 : i + 5], "little"
+                            )
+                i += extra_size
 
-                        if tipo_upper == OUTPUT_TYPE_ZONA and tipo_id in self._data.get("zones", {}):
-                            self._data["zones"][tipo_id]["estado"] = estado
-                        elif tipo_upper == OUTPUT_TYPE_TANQUE and tipo_id in self._data.get("tanks", {}):
-                            self._data["tanks"][tipo_id]["estado"] = estado
-                            if i + 3 < len(data):
-                                self._data["tanks"][tipo_id]["nivel"] = data[i + 3]
-                                step = 4
-                        elif tipo_upper == OUTPUT_TYPE_PISCINA and tipo_id in self._data.get("pools", {}):
-                            self._data["pools"][tipo_id]["estado"] = estado
-                        elif tipo_upper == OUTPUT_TYPE_MANGUERA and tipo_id in self._data.get("mangueras", {}):
-                            self._data["mangueras"][tipo_id]["estado"] = estado
-                        elif tipo_upper == OUTPUT_TYPE_CICLON and tipo_id in self._data.get("ciclon", {}):
-                            self._data["ciclon"][tipo_id]["estado"] = estado
-                            if i + 4 < len(data):
-                                self._data["ciclon"][tipo_id]["proximo_ciclon"] = data[i + 3] | (data[i + 4] << 8)
-                                step = 5
-                i += step
-
-            elif section == "H":
-                if i + 8 < len(data):
-                    riego_id = data[i + 1]
-                    if riego_id in self._data.get("riegos", {}):
-                        self._data["riegos"][riego_id]["estado"] = data[i + 2]
-                        self._data["riegos"][riego_id]["active_zona"] = data[i + 3]
-                        self._data["riegos"][riego_id]["duracion"] = (
-                            data[i + 5] | (data[i + 6] << 8) | (data[i + 7] << 16) | (data[i + 8] << 24)
-                        )
+            elif section == ord("H"):
+                if remaining < 9:
+                    truncated("H", i)
+                    return
+                riego_id = data[i + 1]
+                riego = self._data.get("riegos", {}).get(riego_id)
+                if riego is not None:
+                    riego["estado"] = data[i + 2]
+                    riego["active_zona"] = data[i + 3]
+                    riego["duracion"] = int.from_bytes(data[i + 5 : i + 9], "little")
                 i += 9
 
-            elif section == "L":
-                if i + 3 < len(data):
-                    tarea_id = data[i + 1]
-                    tipo_hex = f"{data[i + 2]:02X}"
-                    modo = data[i + 3]
-                    duracion = 0
-                    if tarea_id == 0 and i + 5 < len(data):
-                        duracion = data[i + 4] | (data[i + 5] << 8)
-                        i += 6
-                    else:
-                        i += 4
+            elif section == ord("L"):
+                if remaining < 4:
+                    truncated("L", i)
+                    return
+                tarea_id = data[i + 1]
+                record_size = 6 if tarea_id == 0 else 4
+                if remaining < record_size:
+                    truncated("L", i)
+                    return
+                self._data["tareas"][tarea_id] = {
+                    "id": tarea_id,
+                    "tipo": f"{data[i + 2]:02X}",
+                    "modo": data[i + 3],
+                    "duracion": int.from_bytes(data[i + 4 : i + 6], "little")
+                    if tarea_id == 0
+                    else 0,
+                }
+                i += record_size
 
-                    self._data["tareas"][tarea_id] = {
-                        "id": tarea_id,
-                        "tipo": tipo_hex,
-                        "modo": modo,
-                        "duracion": duracion,
-                    }
-            elif section == "u":
-                if i + 3 < len(data):
-                    self._data["uart_reset_count"] = data[i + 2] | (data[i + 3] << 8)
+            elif section == ord("u"):
+                if remaining < 4:
+                    truncated("u", i)
+                    return
+                self._data["uart_reset_count"] = int.from_bytes(data[i + 2 : i + 4], "little")
                 i += 4
+
+            elif section == ord("c"):
+                if remaining < 3:
+                    truncated("c", i)
+                    return
+                self._data["esp_reset_count"] = int.from_bytes(data[i + 1 : i + 3], "little")
+                i += 3
+
+            elif section == ord("k"):
+                if remaining < 2:
+                    truncated("k", i)
+                    return
+                self._data["button_state"] = data[i + 1]
+                i += 2
             else:
                 i += 1
 
