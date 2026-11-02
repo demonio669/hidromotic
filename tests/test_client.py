@@ -247,8 +247,8 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
             4: {"nivel": 4},
         }
 
-        self.assertEqual(client.get_tank_level(0), "empty")
-        self.assertEqual(client.get_tank_level(1), "full")
+        self.assertEqual(client.get_tank_level(0), "full")
+        self.assertEqual(client.get_tank_level(1), "empty")
         self.assertEqual(client.get_tank_level(2), "sensor_fail")
         self.assertEqual(client.get_tank_level(3), "level_fail")
         self.assertEqual(client.get_tank_level(4), "medium")

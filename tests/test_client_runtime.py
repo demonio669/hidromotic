@@ -561,8 +561,8 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(updates), 3)
 
         for level, expected in (
-            (0, "empty"),
-            (1, "full"),
+            (0, "full"),
+            (1, "empty"),
             (2, "sensor_fail"),
             (3, "level_fail"),
             (4, "medium"),

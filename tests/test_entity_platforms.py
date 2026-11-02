@@ -183,7 +183,7 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tank_sensors_report_values_and_availability(self) -> None:
         self.coordinator.get_tanks.return_value = {
-            0: {"estado": 0, "nivel": 1, "label": "Cisterna"}
+            0: {"estado": 0, "nivel": 0, "label": "Cisterna"}
         }
         data = self.coordinator.get_tanks.return_value[0]
         level = sensor.HidromoticTankLevelSensor(self.coordinator, self.entry, 0, data)
@@ -200,6 +200,12 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(full.native_value, "true")
         self.assertTrue(tank_binary.available)
 
+        data["nivel"] = 1
+        self.coordinator.client.get_tank_level.return_value = "empty"
+        self.assertEqual(level.native_value, "empty")
+        self.assertEqual(empty.native_value, "true")
+        self.assertEqual(full.native_value, "false")
+
         data["estado"] = 7
         self.assertFalse(level.available)
         self.assertFalse(empty.available)
@@ -209,7 +215,7 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
             data["nivel"] = unavailable_level
             self.assertFalse(tank_binary.available)
 
-        data["nivel"] = 1
+        data["nivel"] = 0
         self.coordinator.client.data["inputs"] = {}
         self.assertFalse(
             binary_sensor.HidromoticPhysicalInputSensor(
