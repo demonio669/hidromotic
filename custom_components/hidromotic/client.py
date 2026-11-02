@@ -315,6 +315,19 @@ class HidromoticClient:
                         self._data["ota"] = result.get("ota")
                     if "uptime" in result:
                         self._data["uptime"] = result.get("uptime", 0)
+                    if isinstance(result.get("mg_version"), str):
+                        self._data["mg_version"] = result["mg_version"]
+                    active_slot = result.get("active_slot")
+                    if isinstance(active_slot, int) and not isinstance(active_slot, bool):
+                        self._data["active_slot"] = active_slot
+
+                    ram = result.get("ram")
+                    if isinstance(ram, dict):
+                        for field in ("free", "min_free"):
+                            value = ram.get(field)
+                            if isinstance(value, int) and not isinstance(value, bool):
+                                self._data[f"ram_{field}"] = ram[field]
+
                     if "mac" in result:
                         mac = result.get("mac")
                         if isinstance(mac, str) and mac.strip():
@@ -322,13 +335,20 @@ class HidromoticClient:
                             self.mac_ready.set()
 
                     wifi = result.get("wifi")
-                    wifi_data = wifi.get("sta", {}) if isinstance(wifi, dict) else {}
+                    wifi_section = wifi if isinstance(wifi, dict) else {}
+                    wifi_data = wifi_section.get("sta", {})
                     if not isinstance(wifi_data, dict):
                         wifi_data = {}
-                    if "ssid" in wifi_data:
-                        self._data["wifi_ssid"] = wifi_data.get("ssid")
-                    if "ip" in wifi_data:
-                        self._data["wifi_ip"] = wifi_data.get("ip")
+                    for source_key, data_key in (
+                        ("ssid", "wifi_ssid"),
+                        ("ip", "wifi_ip"),
+                        ("dhcp", "wifi_dhcp"),
+                        ("gw", "wifi_gateway"),
+                        ("sntp", "wifi_sntp"),
+                    ):
+                        value = wifi_data.get(source_key)
+                        if isinstance(value, str):
+                            self._data[data_key] = value
                     if "rssi" in wifi_data:
                         rssi = wifi_data.get("rssi", -100)
                         if rssi == 0 or rssi <= -100:
@@ -340,6 +360,23 @@ class HidromoticClient:
                         self._data["wifi_signal"] = signal
                     if "routertime" in wifi_data:
                         self._data["wifi_routertime"] = wifi_data.get("routertime", 0)
+
+                    wifi_ap = wifi_section.get("ap", {})
+                    if isinstance(wifi_ap, dict):
+                        ssid = wifi_ap.get("ssid")
+                        if isinstance(ssid, str):
+                            self._data["wifi_ap_ssid"] = ssid
+                        ip = wifi_ap.get("ip")
+                        if isinstance(ip, str):
+                            self._data["wifi_ap_ip"] = ip
+
+                    mqtt = wifi_section.get("mqtt", {})
+                    if isinstance(mqtt, dict):
+                        connected_time = mqtt.get("d")
+                        if isinstance(connected_time, int) and not isinstance(
+                            connected_time, bool
+                        ):
+                            self._data["mqtt_connected_time"] = connected_time
         except json.JSONDecodeError:
             _LOGGER.debug("Protocol RX (non-JSON text response, length=%d)", len(data))
         self._notify_callbacks()

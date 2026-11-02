@@ -47,7 +47,8 @@ puede crear:
 - **Controles numéricos** para ajustar en minutos la duración de las zonas,
   piscinas y tanques.
 - **Sensores** de estado de bomba, nivel de tanque, entradas físicas y datos de
-  diagnóstico y conectividad.
+  diagnóstico y conectividad: Wi-Fi, MQTT, versiones del sistema, memoria y
+  punto de acceso del CHI.
 - **Botón de diagnóstico** para reiniciar el dispositivo.
 
 Podés usar los interruptores y controles desde la página del dispositivo,

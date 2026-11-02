@@ -10,7 +10,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import PERCENTAGE, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfInformation, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -50,6 +50,10 @@ async def async_setup_entry(
         HidromoticIPAddressSensor(coordinator, entry),
         HidromoticWifiSignalSensor(coordinator, entry),
         HidromoticWifiConnectedTimeSensor(coordinator, entry),
+        HidromoticWifiSntpSensor(coordinator, entry),
+        HidromoticWifiDhcpSensor(coordinator, entry),
+        HidromoticWifiGatewaySensor(coordinator, entry),
+        HidromoticMqttConnectedTimeSensor(coordinator, entry),
         HidromoticMacAddressSensor(coordinator, entry),
         HidromoticTypeSensor(coordinator, entry),
         HidromoticPicVersionSensor(coordinator, entry),
@@ -58,6 +62,12 @@ async def async_setup_entry(
         HidromoticDeviceIdSensor(coordinator, entry),
         HidromoticEspVersionSensor(coordinator, entry),
         HidromoticOtaSensor(coordinator, entry),
+        HidromoticOsVersionSensor(coordinator, entry),
+        HidromoticActiveSlotSensor(coordinator, entry),
+        HidromoticFreeMemorySensor(coordinator, entry),
+        HidromoticMinFreeMemorySensor(coordinator, entry),
+        HidromoticAccessPointSsidSensor(coordinator, entry),
+        HidromoticAccessPointIpSensor(coordinator, entry),
         HidromoticBatterySensor(coordinator, entry),
         HidromoticUptimeSensor(coordinator, entry),
         HidromoticMessageCounterSensor(coordinator, entry),
@@ -224,6 +234,118 @@ class HidromoticWifiConnectedTimeSensor(HidromoticDiagnosticBaseSensor):
     @property
     def native_value(self) -> int:
         return self.coordinator.client.data.get("wifi_routertime", 0)
+
+
+class HidromoticWifiSntpSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wifi_sntp", "SNTP")
+
+    @property
+    def native_value(self) -> str:
+        return str(self.coordinator.client.data.get("wifi_sntp", "unknown")).upper()
+
+
+class HidromoticWifiDhcpSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wifi_dhcp", "DHCP")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.client.data.get("wifi_dhcp", "unknown")
+
+
+class HidromoticWifiGatewaySensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wifi_gateway", "GW")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.client.data.get("wifi_gateway", "unknown")
+
+
+class HidromoticMqttConnectedTimeSensor(HidromoticDiagnosticBaseSensor):
+    _attr_icon = "mdi:timer-outline"
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "mqtt_connected_time", "Tiempo conectado MQTT")
+
+    @property
+    def native_value(self) -> int | None:
+        value = self.coordinator.client.data.get("mqtt_connected_time")
+        return value if isinstance(value, int) else None
+
+
+class HidromoticOsVersionSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "os_version", "OS")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.client.data.get("mg_version", "unknown")
+
+
+class HidromoticActiveSlotSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "active_slot", "Slot activo")
+
+    @property
+    def native_value(self) -> int | str:
+        return self.coordinator.client.data.get("active_slot", "unknown")
+
+
+class HidromoticMemorySensor(HidromoticDiagnosticBaseSensor):
+    _attr_native_unit_of_measurement = UnitOfInformation.BYTES
+    _attr_device_class = SensorDeviceClass.DATA_SIZE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        data_key: str,
+        unique_id: str,
+        name: str,
+    ) -> None:
+        super().__init__(coordinator, entry, unique_id, name)
+        self._data_key = data_key
+
+    @property
+    def native_value(self) -> int | None:
+        value = self.coordinator.client.data.get(self._data_key)
+        return value if isinstance(value, int) else None
+
+
+class HidromoticFreeMemorySensor(HidromoticMemorySensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "ram_free", "ram_free", "Memoria libre")
+
+
+class HidromoticMinFreeMemorySensor(HidromoticMemorySensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(
+            coordinator, entry, "ram_min_free", "ram_min_free", "Memoria libre mínima"
+        )
+
+
+class HidromoticAccessPointSsidSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wifi_ap_ssid", "AP SSID")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.client.data.get("wifi_ap_ssid", "unknown")
+
+
+class HidromoticAccessPointIpSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry) -> None:
+        super().__init__(coordinator, entry, "wifi_ap_ip", "AP IP")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.client.data.get("wifi_ap_ip", "unknown")
 
 
 class HidromoticMacAddressSensor(HidromoticDiagnosticBaseSensor):

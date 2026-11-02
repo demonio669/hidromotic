@@ -281,16 +281,48 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         client = HidromoticClient("chi.local")
         await client._process_text(
             '{"result":{"id":"chi","fw_version":"1.0","ota":"ready",'
-            '"uptime":20,"mac":" AA:BB:CC:DD:EE:FF ",'
+            '"uptime":20,"mg_version":"2.19.1","active_slot":0,'
+            '"ram":{"free":35476,"min_free":11704},'
+            '"mac":" AA:BB:CC:DD:EE:FF ",'
             '"wifi":{"sta":{"ssid":"garden","ip":"192.0.2.1",'
-            '"rssi":-75,"routertime":10}}}}'
+            '"dhcp":"Dynamic","gw":"192.0.2.254","sntp":"SI",'
+            '"rssi":-75,"routertime":10},'
+            '"mqtt":{"d":11756},"ap":{"ssid":"CHI3_C985AB",'
+            '"ip":"192.0.4.1"}}}}'
         )
 
         self.assertEqual(client.data["device_id"], "chi")
         self.assertEqual(client.data["fw_version_esp"], "1.0")
         self.assertEqual(client.data["wifi_signal"], 50)
         self.assertEqual(client.data["mac"], "AA:BB:CC:DD:EE:FF")
+        self.assertEqual(client.data["mg_version"], "2.19.1")
+        self.assertEqual(client.data["active_slot"], 0)
+        self.assertEqual(client.data["ram_free"], 35476)
+        self.assertEqual(client.data["ram_min_free"], 11704)
+        self.assertEqual(client.data["wifi_dhcp"], "Dynamic")
+        self.assertEqual(client.data["wifi_gateway"], "192.0.2.254")
+        self.assertEqual(client.data["wifi_sntp"], "SI")
+        self.assertEqual(client.data["mqtt_connected_time"], 11756)
+        self.assertEqual(client.data["wifi_ap_ssid"], "CHI3_C985AB")
+        self.assertEqual(client.data["wifi_ap_ip"], "192.0.4.1")
         self.assertTrue(client.mac_ready.is_set())
+
+        await client._process_text(
+            '{"result":{"mg_version":2,"active_slot":true,'
+            '"ram":{"free":"invalid","min_free":false},'
+            '"wifi":{"sta":{"dhcp":1,"gw":null,"sntp":false},'
+            '"mqtt":{"d":false},"ap":{"ssid":2,"ip":null}}}}'
+        )
+        self.assertEqual(client.data["mg_version"], "2.19.1")
+        self.assertEqual(client.data["active_slot"], 0)
+        self.assertEqual(client.data["ram_free"], 35476)
+        self.assertEqual(client.data["ram_min_free"], 11704)
+        self.assertEqual(client.data["wifi_dhcp"], "Dynamic")
+        self.assertEqual(client.data["wifi_gateway"], "192.0.2.254")
+        self.assertEqual(client.data["wifi_sntp"], "SI")
+        self.assertEqual(client.data["mqtt_connected_time"], 11756)
+        self.assertEqual(client.data["wifi_ap_ssid"], "CHI3_C985AB")
+        self.assertEqual(client.data["wifi_ap_ip"], "192.0.4.1")
 
         for rssi, expected in ((0, 0), (-100, 0), (-40, 100)):
             await client._process_text(

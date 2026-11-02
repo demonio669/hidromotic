@@ -230,6 +230,16 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
             "wifi_ip": "192.0.2.2",
             "wifi_signal": 75,
             "wifi_routertime": 33,
+            "wifi_sntp": "SI",
+            "wifi_dhcp": "Dynamic",
+            "wifi_gateway": "192.0.2.1",
+            "mqtt_connected_time": 11756,
+            "mg_version": "2.19.1",
+            "active_slot": 0,
+            "ram_free": 35476,
+            "ram_min_free": 11704,
+            "wifi_ap_ssid": "CHI3_C985AB",
+            "wifi_ap_ip": "192.0.4.1",
             "mac": "AA:BB:CC:DD:EE:FF",
             "pic_name": "CHI Smart Mini",
             "pic_version": 12,
@@ -253,6 +263,10 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
             sensor.HidromoticIPAddressSensor(self.coordinator, self.entry),
             sensor.HidromoticWifiSignalSensor(self.coordinator, self.entry),
             sensor.HidromoticWifiConnectedTimeSensor(self.coordinator, self.entry),
+            sensor.HidromoticWifiSntpSensor(self.coordinator, self.entry),
+            sensor.HidromoticWifiDhcpSensor(self.coordinator, self.entry),
+            sensor.HidromoticWifiGatewaySensor(self.coordinator, self.entry),
+            sensor.HidromoticMqttConnectedTimeSensor(self.coordinator, self.entry),
             sensor.HidromoticMacAddressSensor(self.coordinator, self.entry),
             sensor.HidromoticTypeSensor(self.coordinator, self.entry),
             sensor.HidromoticPicVersionSensor(self.coordinator, self.entry),
@@ -261,6 +275,12 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
             sensor.HidromoticDeviceIdSensor(self.coordinator, self.entry),
             sensor.HidromoticEspVersionSensor(self.coordinator, self.entry),
             sensor.HidromoticOtaSensor(self.coordinator, self.entry),
+            sensor.HidromoticOsVersionSensor(self.coordinator, self.entry),
+            sensor.HidromoticActiveSlotSensor(self.coordinator, self.entry),
+            sensor.HidromoticFreeMemorySensor(self.coordinator, self.entry),
+            sensor.HidromoticMinFreeMemorySensor(self.coordinator, self.entry),
+            sensor.HidromoticAccessPointSsidSensor(self.coordinator, self.entry),
+            sensor.HidromoticAccessPointIpSensor(self.coordinator, self.entry),
             sensor.HidromoticBatterySensor(self.coordinator, self.entry),
             sensor.HidromoticUptimeSensor(self.coordinator, self.entry),
             sensor.HidromoticMessageCounterSensor(self.coordinator, self.entry),
@@ -276,6 +296,10 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
                 "192.0.2.2",
                 75,
                 33,
+                "SI",
+                "Dynamic",
+                "192.0.2.1",
+                11756,
                 "AA:BB:CC:DD:EE:FF",
                 "CHI Smart Mini",
                 12,
@@ -284,6 +308,12 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
                 "device-1",
                 "1.2.3",
                 "READY",
+                "2.19.1",
+                0,
+                35476,
+                11704,
+                "CHI3_C985AB",
+                "192.0.4.1",
                 100,
                 300,
                 17,
@@ -295,7 +325,9 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator.get_pump.return_value = {"estado": 99}
         self.assertEqual(entities[0].native_value, "unknown_99")
         self.coordinator.client.data["bateria"] = 0
-        self.assertIsNone(entities[14].native_value)
+        self.assertIsNone(entities[24].native_value)
+        self.assertEqual(entities[9].native_unit_of_measurement, "s")
+        self.assertEqual(entities[21].native_unit_of_measurement, "B")
 
     async def test_binary_sensors_report_state(self) -> None:
         self.coordinator.get_pump.return_value = {"pausa_externa": 1}
