@@ -33,6 +33,15 @@ cambios.
 4. Confirmá para finalizar. Para Local, el CHI debe ser accesible desde Home
    Assistant. Para Cloud, Home Assistant necesita acceso a Internet.
 
+### Cambiar el modo de conexión
+
+No es necesario eliminar la integración para cambiar entre Local y Cloud. En
+**Ajustes > Dispositivos y servicios > Integraciones**, abrí el menú de Hidromotic
+y seleccioná **Reconfigurar**. Elegí el nuevo modo y completá sus datos. Al
+cambiar a Cloud se solicita nuevamente la contraseña de la cuenta; al cambiar a
+Local, ingresá la dirección IP o el nombre de host del CHI. La integración
+verifica que el dispositivo sea el mismo antes de guardar el cambio.
+
 ## Uso
 
 Las entidades disponibles dependen de la configuración del CHI. La integración
@@ -46,7 +55,7 @@ puede crear:
   piscinas y tanques.
 - **Sensores** de estado de bomba, nivel de tanque, entradas físicas y datos de
   diagnóstico y conectividad: Wi-Fi, MQTT, versiones del sistema, memoria y
-  punto de acceso del CHI.
+  punto de acceso del CHI, modo de conexión y usuario de Hidromotic.
 - **Botón de diagnóstico** para reiniciar el dispositivo.
 
 Podés usar los interruptores y controles desde la página del dispositivo,

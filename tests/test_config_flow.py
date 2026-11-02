@@ -188,6 +188,78 @@ class HidromoticConfigFlowValidationTests(unittest.IsolatedAsyncioTestCase):
         await flow.async_step_user({CONF_CONNECTION_TYPE: CONNECTION_TYPE_LOCAL})
         flow.async_step_local.assert_awaited_once()
 
+    async def test_reconfigure_flow_routes_to_selected_connection_method(self) -> None:
+        flow = HidromoticConfigFlow()
+        entry = MagicMock()
+        entry.data = {CONF_CONNECTION_TYPE: CONNECTION_TYPE_LOCAL}
+        flow._get_reconfigure_entry = MagicMock(return_value=entry)
+        flow.async_step_reconfigure_cloud = AsyncMock(return_value={"type": "form"})
+        flow.async_step_reconfigure_local = AsyncMock(return_value={"type": "form"})
+
+        result = await flow.async_step_reconfigure()
+        self.assertEqual(result["step_id"], "reconfigure")
+
+        await flow.async_step_reconfigure({CONF_CONNECTION_TYPE: CONNECTION_TYPE_CLOUD})
+        flow.async_step_reconfigure_cloud.assert_awaited_once()
+
+        await flow.async_step_reconfigure({CONF_CONNECTION_TYPE: CONNECTION_TYPE_LOCAL})
+        flow.async_step_reconfigure_local.assert_awaited_once()
+
+    async def test_reconfigure_updates_existing_entry_for_same_device(self) -> None:
+        flow = HidromoticConfigFlow()
+        entry = MagicMock()
+        entry.unique_id = "aabbccddeeff"
+        flow._get_reconfigure_entry = MagicMock(return_value=entry)
+        flow.async_update_reload_and_abort = MagicMock(
+            return_value={"type": "abort"}
+        )
+
+        with patch(
+            "custom_components.hidromotic.config_flow.validate_input",
+            AsyncMock(
+                return_value={
+                    "title": "CHI Smart (Cloud)",
+                    "device_id": "aabbccddeeff",
+                }
+            ),
+        ):
+            result = await flow.async_step_reconfigure_cloud(
+                {"username": "account", "password": "new-secret"}
+            )
+
+        self.assertEqual(result, {"type": "abort"})
+        flow.async_update_reload_and_abort.assert_called_once_with(
+            entry,
+            data={
+                CONF_CONNECTION_TYPE: CONNECTION_TYPE_CLOUD,
+                "username": "account",
+                "password": "new-secret",
+            },
+            title="CHI Smart (Cloud)",
+        )
+
+    async def test_reconfigure_rejects_a_different_device(self) -> None:
+        flow = HidromoticConfigFlow()
+        entry = MagicMock()
+        entry.unique_id = "aabbccddeeff"
+        flow._get_reconfigure_entry = MagicMock(return_value=entry)
+        flow.async_update_reload_and_abort = MagicMock()
+
+        with patch(
+            "custom_components.hidromotic.config_flow.validate_input",
+            AsyncMock(
+                return_value={
+                    "title": "CHI Smart (other)",
+                    "device_id": "001122334455",
+                }
+            ),
+        ):
+            result = await flow.async_step_reconfigure_local({"host": "other"})
+
+        self.assertEqual(result["type"], "form")
+        self.assertEqual(result["errors"], {"base": "different_device"})
+        flow.async_update_reload_and_abort.assert_not_called()
+
     async def test_cloud_validation_uses_account_client_and_persists_identity(self) -> None:
         client = MagicMock()
         client.connect = AsyncMock(return_value=True)

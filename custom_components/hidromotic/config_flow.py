@@ -92,6 +92,61 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose a connection method when reconfiguring an existing device."""
+        entry = self._get_reconfigure_entry()
+        if user_input is not None:
+            if user_input[CONF_CONNECTION_TYPE] == CONNECTION_TYPE_CLOUD:
+                return await self.async_step_reconfigure_cloud()
+            return await self.async_step_reconfigure_local()
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CONNECTION_TYPE,
+                        default=entry.data.get(
+                            CONF_CONNECTION_TYPE, CONNECTION_TYPE_LOCAL
+                        ),
+                    ): vol.In([CONNECTION_TYPE_LOCAL, CONNECTION_TYPE_CLOUD]),
+                }
+            ),
+        )
+
+    async def async_step_reconfigure_local(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update the direct connection host."""
+        entry = self._get_reconfigure_entry()
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_HOST, default=entry.data.get(CONF_HOST, "")): str
+            }
+        )
+        return await self._async_reconfigure_connection(
+            user_input, CONNECTION_TYPE_LOCAL, schema, "reconfigure_local"
+        )
+
+    async def async_step_reconfigure_cloud(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update the Hidromotic Cloud account credentials."""
+        entry = self._get_reconfigure_entry()
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USERNAME, default=entry.data.get(CONF_USERNAME, "")
+                ): str,
+                vol.Required(CONF_PASSWORD): TextSelector({"type": "password"}),
+            }
+        )
+        return await self._async_reconfigure_connection(
+            user_input, CONNECTION_TYPE_CLOUD, schema, "reconfigure_cloud"
+        )
+
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -149,6 +204,40 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(info["device_id"])
                 self._abort_if_unique_id_configured(updates=data)
                 return self.async_create_entry(title=info["title"], data=data)
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=schema,
+            errors=errors,
+        )
+
+    async def _async_reconfigure_connection(
+        self,
+        user_input: dict[str, Any] | None,
+        connection_type: str,
+        schema: vol.Schema,
+        step_id: str,
+    ) -> ConfigFlowResult:
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = {CONF_CONNECTION_TYPE: connection_type, **user_input}
+            try:
+                info = await validate_input(self.hass, data)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception while reconfiguring")
+                errors["base"] = "unknown"
+            else:
+                if normalize_mac_address(entry.unique_id) != info["device_id"]:
+                    errors["base"] = "different_device"
+                else:
+                    return self.async_update_reload_and_abort(
+                        entry,
+                        data=data,
+                        title=info["title"],
+                    )
 
         return self.async_show_form(
             step_id=step_id,

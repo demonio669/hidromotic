@@ -5,6 +5,7 @@
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "different_device": "The connection points to a different CHI than the one already configured.",
       "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "step": {
@@ -31,6 +32,31 @@
           "password": "Password"
         },
         "description": "Use the account associated with your CHI at hidromotic.com.",
+        "title": "Hidromotic Cloud"
+      },
+      "reconfigure": {
+        "data": {
+          "connection_type": "Connection method"
+        },
+        "description": "Change how Home Assistant connects to this CHI.",
+        "title": "Reconfigure Hidromotic"
+      },
+      "reconfigure_local": {
+        "data": {
+          "host": "[%key:common::config_flow::data::host%]"
+        },
+        "data_description": {
+          "host": "The hostname or IP address of your Hidromotic device."
+        },
+        "description": "Enter the IP address or hostname of the CHI.",
+        "title": "Local connection"
+      },
+      "reconfigure_cloud": {
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "description": "Enter the account associated with this CHI. Enter the password again to update the connection.",
         "title": "Hidromotic Cloud"
       }
     }

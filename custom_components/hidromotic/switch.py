@@ -147,6 +147,7 @@ class HidromoticBaseSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntit
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
+            sw_version=coordinator.integration_version,
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",
@@ -339,6 +340,7 @@ class HidromoticAutoRiegoSwitch(CoordinatorEntity[HidromoticCoordinator], Switch
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
+            sw_version=coordinator.integration_version,
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",

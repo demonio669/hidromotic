@@ -9,6 +9,7 @@ from homeassistant.const import CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.loader import async_get_integration
 
 from .client import HidromoticClient, hex_to_int, int_to_hex, normalize_mac_address
 from .cloud_client import HidromoticCloudClient
@@ -37,6 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HidromoticConfigEntry) -
     """Set up Hidromotic from a config entry."""
     # Reutiliza la sesión HTTP global administrada por Home Assistant
     session = async_get_clientsession(hass)
+    integration = await async_get_integration(hass, DOMAIN)
     if entry.data.get(CONF_CONNECTION_TYPE) == CONNECTION_TYPE_CLOUD:
         client = HidromoticCloudClient(
             entry.data["username"],
@@ -49,7 +51,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HidromoticConfigEntry) -
         client = HidromoticClient(host, session=session)
         connection_name = f"Hidromotic device at {host}"
 
-    coordinator = HidromoticCoordinator(hass, client, entry)
+    coordinator = HidromoticCoordinator(hass, client, entry, integration.version)
 
     if not await coordinator.async_setup():
         await coordinator.async_shutdown()

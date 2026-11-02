@@ -13,6 +13,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     COMMAND_INTERVAL_SECONDS,
+    CONNECTION_TYPE_LOCAL,
     OUTPUT_TYPE_CICLON,
     OUTPUT_TYPE_MANGUERA,
     OUTPUT_TYPE_PISCINA,
@@ -103,6 +104,8 @@ class HidromoticClient:
     """Cliente WebSocket asíncrono para la comunicación con la controladora Hidromotic."""
 
     RECONNECT_INTERVAL = 30
+    connection_type = CONNECTION_TYPE_LOCAL
+    account_username: str | None = None
 
     def __init__(
         self,

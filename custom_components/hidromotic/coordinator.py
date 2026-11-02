@@ -21,7 +21,11 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Coordinator for Hidromotic device."""
 
     def __init__(
-        self, hass: HomeAssistant, client: HidromoticClient, config_entry: ConfigEntry
+        self,
+        hass: HomeAssistant,
+        client: HidromoticClient,
+        config_entry: ConfigEntry,
+        integration_version: str | None = None,
     ) -> None:
         """Initialize the coordinator."""
         super().__init__(
@@ -32,6 +36,7 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             config_entry=config_entry,
         )
         self.client = client
+        self.integration_version = integration_version
         self._remove_callback: Callable[[], None] | None = None
         self._has_received_initial_data = False
 

@@ -10,6 +10,7 @@ import aiohttp
 from homeassistant.exceptions import HomeAssistantError
 
 from .client import HidromoticClient
+from .const import CONNECTION_TYPE_CLOUD
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class HidromoticCloudClient(HidromoticClient):
 
     LOGIN_URL = "https://hidromotic.com/"
     WEBSOCKET_URL = "wss://hidromotic.com/ws"
+    connection_type = CONNECTION_TYPE_CLOUD
 
     def __init__(
         self,
@@ -29,6 +31,7 @@ class HidromoticCloudClient(HidromoticClient):
         super().__init__("hidromotic.com", session=session)
         self._username = username
         self._password = password
+        self.account_username = username
 
     async def connect(self) -> bool:
         """Log in, open the cloud socket, and request initial device data."""

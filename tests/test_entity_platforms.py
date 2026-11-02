@@ -20,6 +20,7 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.entry.title = "CHI"
         self.entry.async_on_unload = MagicMock()
         self.coordinator = MagicMock()
+        self.coordinator.integration_version = "1.0.52"
         self.entry.runtime_data = self.coordinator
         self.coordinator.client.data = {"is_mini": True}
         self.coordinator.client.get_tank_level.return_value = "full"
@@ -222,6 +223,21 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
                 self.coordinator, self.entry, 99, {"tipo": 12}
             ).is_on
         )
+
+    async def test_connection_diagnostic_sensors_report_mode_and_account(self) -> None:
+        mode = sensor.HidromoticConnectionModeSensor(self.coordinator, self.entry)
+        username = sensor.HidromoticCloudUsernameSensor(self.coordinator, self.entry)
+
+        self.assertEqual(mode.device_info.get("sw_version"), "1.0.52")
+        self.coordinator.client.connection_type = "local"
+        self.coordinator.client.account_username = None
+        self.assertEqual(mode.native_value, "Local")
+        self.assertEqual(username.native_value, "No aplica")
+
+        self.coordinator.client.connection_type = "cloud"
+        self.coordinator.client.account_username = "my-account"
+        self.assertEqual(mode.native_value, "Cloud")
+        self.assertEqual(username.native_value, "my-account")
 
     async def test_diagnostic_sensors_expose_values_and_defaults(self) -> None:
         self.coordinator.client.data = {

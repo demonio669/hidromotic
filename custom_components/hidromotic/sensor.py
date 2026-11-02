@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
 from .const import (
+    CONNECTION_TYPE_CLOUD,
     DOMAIN,
     PUMP_NO_WATER,
     PUMP_OFF,
@@ -46,6 +47,8 @@ async def async_setup_entry(
     entities: list[SensorEntity] = [
         HidromoticPumpSensor(coordinator, entry),
         HidromoticPumpMarchaSensor(coordinator, entry),
+        HidromoticConnectionModeSensor(coordinator, entry),
+        HidromoticCloudUsernameSensor(coordinator, entry),
         HidromoticWifiSSIDSensor(coordinator, entry),
         HidromoticIPAddressSensor(coordinator, entry),
         HidromoticWifiSignalSensor(coordinator, entry),
@@ -134,6 +137,7 @@ class HidromoticDiagnosticBaseSensor(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
+            sw_version=coordinator.integration_version,
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",
@@ -158,6 +162,7 @@ class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntit
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
+            sw_version=coordinator.integration_version,
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",
@@ -190,6 +195,30 @@ class HidromoticPumpMarchaSensor(HidromoticDiagnosticBaseSensor):
     @property
     def native_value(self) -> int:
         return self.coordinator.get_pump().get("marcha", 0)
+
+
+class HidromoticConnectionModeSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(
+        self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry
+    ) -> None:
+        super().__init__(coordinator, entry, "connection_mode", "Modo de conexión")
+
+    @property
+    def native_value(self) -> str:
+        if self.coordinator.client.connection_type == CONNECTION_TYPE_CLOUD:
+            return "Cloud"
+        return "Local"
+
+
+class HidromoticCloudUsernameSensor(HidromoticDiagnosticBaseSensor):
+    def __init__(
+        self, coordinator: HidromoticCoordinator, entry: HidromoticConfigEntry
+    ) -> None:
+        super().__init__(coordinator, entry, "cloud_username", "Usuario Hidromotic")
+
+    @property
+    def native_value(self) -> str:
+        return self.coordinator.client.account_username or "No aplica"
 
 
 class HidromoticWifiSSIDSensor(HidromoticDiagnosticBaseSensor):
@@ -511,6 +540,7 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
+            sw_version=coordinator.integration_version,
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",
@@ -550,6 +580,7 @@ class HidromoticTankEmptyStateSensor(
             identifiers={(DOMAIN, entry.entry_id)},
             name=entry.title,
             manufacturer="Hidromotic",
+            sw_version=coordinator.integration_version,
             model="CHI Smart Mini"
             if coordinator.client.data.get("is_mini")
             else "CHI Smart",

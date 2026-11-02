@@ -25,11 +25,17 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator = MagicMock()
         self.coordinator.async_setup = AsyncMock(return_value=True)
         self.coordinator.async_shutdown = AsyncMock()
+        self.integration = MagicMock(version="1.0.52")
+        self.integration_lookup = AsyncMock(return_value=self.integration)
         self.hass.config_entries.async_forward_entry_setups = AsyncMock()
         self.patches = [
             patch(
                 "custom_components.hidromotic.async_get_clientsession",
                 return_value=object(),
+            ),
+            patch(
+                "custom_components.hidromotic.async_get_integration",
+                new=self.integration_lookup,
             ),
             patch(
                 "custom_components.hidromotic.HidromoticClient",
@@ -49,6 +55,7 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result)
         self.assertIs(self.entry.runtime_data, self.coordinator)
+        self.integration_lookup.assert_awaited_once_with(self.hass, "hidromotic")
         self.hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
     async def test_setup_entry_selects_cloud_client_from_config_entry(self) -> None:
