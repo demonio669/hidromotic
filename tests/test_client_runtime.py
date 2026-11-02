@@ -81,10 +81,19 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         updates: list[dict] = []
         client.register_callback(updates.append)
 
-        self.assertTrue(await client.connect())
+        with patch("custom_components.hidromotic.client.asyncio.sleep", new=AsyncMock()) as sleep:
+            self.assertTrue(await client.connect())
         self.assertTrue(client.connected)
         self.assertEqual(len(updates), 1)
         self.assertEqual(websocket.send_str.await_count, 3)
+        self.assertEqual(
+            [
+                call.args[0].split('"c":"')[1].split('"')[0]
+                for call in websocket.send_str.await_args_list
+            ],
+            ["e", "#@C;", "#@EY;"],
+        )
+        self.assertEqual(sleep.await_count, 2)
 
         await client.disconnect()
         self.assertFalse(client.connected)
@@ -133,6 +142,22 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         websocket.closed = True
         with self.assertRaises(HomeAssistantError):
             await client._send_command("e")
+
+    async def test_send_command_enforces_minimum_interval(self) -> None:
+        client = HidromoticClient("chi.local")
+        websocket = WaitingWebSocket()
+        client._ws = websocket
+        client._last_command_sent_at = asyncio.get_running_loop().time()
+
+        with patch(
+            "custom_components.hidromotic.client.asyncio.sleep", new=AsyncMock()
+        ) as sleep:
+            await client._send_command("e")
+
+        sleep.assert_awaited_once()
+        self.assertGreater(sleep.await_args.args[0], 0.9)
+        self.assertLessEqual(sleep.await_args.args[0], 1)
+        self.assertEqual(websocket.send_str.await_count, 1)
 
     async def test_listener_processes_messages_and_reconnects(self) -> None:
         messages = [

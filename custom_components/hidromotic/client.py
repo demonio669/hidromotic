@@ -12,6 +12,7 @@ import aiohttp
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
+    COMMAND_INTERVAL_SECONDS,
     OUTPUT_TYPE_CICLON,
     OUTPUT_TYPE_MANGUERA,
     OUTPUT_TYPE_PISCINA,
@@ -103,6 +104,8 @@ class HidromoticClient:
         self.data_ready = asyncio.Event()
         self.mac_ready = asyncio.Event()
         self._lock = asyncio.Lock()
+        self._command_lock = asyncio.Lock()
+        self._last_command_sent_at: float | None = None
 
     @property
     def connected(self) -> bool:
@@ -182,29 +185,41 @@ class HidromoticClient:
 
     async def _send_command(self, command: str) -> None:
         """Envía un comando en formato JSON-RPC al WebSocket."""
-        if not self._ws or self._ws.closed:
-            raise HomeAssistantError("No hay conexión con el dispositivo Hidromotic")
+        async with self._command_lock:
+            loop = asyncio.get_running_loop()
+            if self._last_command_sent_at is not None:
+                delay = COMMAND_INTERVAL_SECONDS - (
+                    loop.time() - self._last_command_sent_at
+                )
+                if delay > 0:
+                    await asyncio.sleep(delay)
 
-        async with self._lock:
-            if command.startswith("#"):
-                payload = f'{{"method":"hdmt","params":{{"c":"{command}"}}}}'
-            else:
-                payload = f'{{"id":1111,"method":"hdmt","params":{{"c":"{command}"}}}}'
+            async with self._lock:
+                if not self._ws or self._ws.closed:
+                    raise HomeAssistantError(
+                        "No hay conexión con el dispositivo Hidromotic"
+                    )
 
-            _LOGGER.debug("Sending command: %s", payload)
+                if command.startswith("#"):
+                    payload = f'{{"method":"hdmt","params":{{"c":"{command}"}}}}'
+                else:
+                    payload = f'{{"id":1111,"method":"hdmt","params":{{"c":"{command}"}}}}'
 
-            try:
-                await asyncio.wait_for(self._ws.send_str(payload), timeout=5.0)
-            except TimeoutError as err:
-                _LOGGER.error("Timeout sending command '%s' to Hidromotic", command)
-                raise HomeAssistantError(
-                    "Tiempo de espera agotado al enviar un comando a Hidromotic"
-                ) from err
-            except Exception as err:
-                _LOGGER.error("Error sending command to Hidromotic: %s", err)
-                raise HomeAssistantError(
-                    "No se pudo enviar el comando al dispositivo Hidromotic"
-                ) from err
+                _LOGGER.debug("Sending command: %s", payload)
+                self._last_command_sent_at = loop.time()
+
+                try:
+                    await asyncio.wait_for(self._ws.send_str(payload), timeout=5.0)
+                except TimeoutError as err:
+                    _LOGGER.error("Timeout sending command '%s' to Hidromotic", command)
+                    raise HomeAssistantError(
+                        "Tiempo de espera agotado al enviar un comando a Hidromotic"
+                    ) from err
+                except Exception as err:
+                    _LOGGER.error("Error sending command to Hidromotic: %s", err)
+                    raise HomeAssistantError(
+                        "No se pudo enviar el comando al dispositivo Hidromotic"
+                    ) from err
 
     async def _listen(self) -> None:
         """Bucle principal para procesar los mensajes recibidos."""

@@ -2,8 +2,11 @@
 
 DOMAIN = "hidromotic"
 
-# Time to wait for device to send initial configuration after WebSocket connection
-INITIAL_DATA_WAIT_SECONDS = 2
+# Time to wait for device metadata and configuration after WebSocket connection
+INITIAL_DATA_WAIT_SECONDS = 10
+
+# The CHI WebSocket client spaces commands by at least one second.
+COMMAND_INTERVAL_SECONDS = 1
 
 # Output types from device firmware (tipo & 0xF0)
 OUTPUT_TYPE_MANGUERA = 0x10  # Hose
