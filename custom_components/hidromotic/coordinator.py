@@ -42,9 +42,12 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return False
 
         try:
-            await asyncio.wait_for(self.client.data_ready.wait(), timeout=INITIAL_DATA_WAIT_SECONDS)
+            await asyncio.wait_for(
+                asyncio.gather(self.client.data_ready.wait(), self.client.mac_ready.wait()),
+                timeout=INITIAL_DATA_WAIT_SECONDS,
+            )
         except TimeoutError:
-            _LOGGER.error("Timeout esperando configuración en coordinator")
+            _LOGGER.error("Timeout esperando configuración y MAC en coordinator")
             return False
 
         self.async_set_updated_data(self.client.data)

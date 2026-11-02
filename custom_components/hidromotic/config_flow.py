@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .client import HidromoticClient
+from .client import HidromoticClient, normalize_mac_address
 from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,12 +35,19 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
             raise CannotConnect
 
         try:
-            await asyncio.wait_for(client.data_ready.wait(), timeout=INITIAL_DATA_WAIT_SECONDS)
+            await asyncio.wait_for(
+                asyncio.gather(client.data_ready.wait(), client.mac_ready.wait()),
+                timeout=INITIAL_DATA_WAIT_SECONDS,
+            )
         except TimeoutError:
-            _LOGGER.error("Timeout esperando datos iniciales del dispositivo")
+            _LOGGER.error("Timeout esperando configuración y MAC del dispositivo")
             raise CannotConnect
 
-        device_id = client.data.get("pic_id", "unknown")
+        device_id = normalize_mac_address(client.data.get("mac"))
+        if device_id is None:
+            _LOGGER.error("El dispositivo no informó una dirección MAC válida")
+            raise CannotConnect
+
         is_mini = client.data.get("is_mini", False)
         name = "CHI Smart Mini" if is_mini else "CHI Smart"
 

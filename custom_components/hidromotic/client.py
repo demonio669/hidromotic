@@ -67,6 +67,17 @@ def int_to_hex(i: int) -> str:
     return str(i)
 
 
+def normalize_mac_address(mac: Any) -> str | None:
+    """Return a normalized MAC address suitable for a config-entry unique ID."""
+    if not isinstance(mac, str):
+        return None
+
+    normalized = mac.strip().replace(":", "").replace("-", "").lower()
+    if len(normalized) != 12 or any(char not in "0123456789abcdef" for char in normalized):
+        return None
+    return normalized
+
+
 class HidromoticClient:
     """Cliente WebSocket asíncrono para la comunicación con la controladora Hidromotic."""
 
@@ -90,6 +101,7 @@ class HidromoticClient:
         self._data: dict[str, Any] = {"c_msg": 0, "lluvia_bloqueado": False, "tareas": {}}
 
         self.data_ready = asyncio.Event()
+        self.mac_ready = asyncio.Event()
         self._lock = asyncio.Lock()
 
     @property
@@ -256,7 +268,10 @@ class HidromoticClient:
                     if "uptime" in result:
                         self._data["uptime"] = result.get("uptime", 0)
                     if "mac" in result:
-                        self._data["mac"] = result.get("mac", "unknown")
+                        mac = result.get("mac")
+                        if isinstance(mac, str) and mac.strip():
+                            self._data["mac"] = mac.strip()
+                            self.mac_ready.set()
 
                     wifi = result.get("wifi")
                     wifi_data = wifi.get("sta", {}) if isinstance(wifi, dict) else {}

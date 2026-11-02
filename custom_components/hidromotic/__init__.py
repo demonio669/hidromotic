@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .client import HidromoticClient, hex_to_int, int_to_hex
+from .client import HidromoticClient, hex_to_int, int_to_hex, normalize_mac_address
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +31,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: HidromoticConfigEntry) -
     coordinator = HidromoticCoordinator(hass, client, entry)
 
     if not await coordinator.async_setup():
+        await coordinator.async_shutdown()
         raise ConfigEntryNotReady(f"Failed to connect to Hidromotic device at {host}")
+
+    mac = normalize_mac_address(client.data.get("mac"))
+    if mac is None:
+        await coordinator.async_shutdown()
+        raise ConfigEntryNotReady("Hidromotic did not provide a valid MAC address")
+    if entry.unique_id != mac:
+        duplicate = next(
+            (
+                configured_entry
+                for configured_entry in hass.config_entries.async_entries(DOMAIN)
+                if configured_entry.entry_id != entry.entry_id
+                and configured_entry.unique_id == mac
+            ),
+            None,
+        )
+        if duplicate is not None:
+            await coordinator.async_shutdown()
+            raise ConfigEntryNotReady(
+                f"MAC address {mac} is already configured by another entry"
+            )
+        hass.config_entries.async_update_entry(entry, unique_id=mac)
 
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

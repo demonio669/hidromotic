@@ -144,8 +144,13 @@ class HidromoticZoneDurationNumber(CoordinatorEntity[HidromoticCoordinator], Num
         self._entry = entry
 
         zone_label = zone_data.get("label") or str(zone_id + 1)
+        entity_name = (
+            zone_label
+            if zone_label.casefold().startswith("zona ")
+            else f"Zona {zone_label}"
+        )
         self._attr_unique_id = f"{entry.entry_id}_zone_{zone_id}_duration_set"
-        self._attr_name = f"Zona {zone_label} Duración"
+        self._attr_name = f"{entity_name} Duración"
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},

@@ -5,10 +5,22 @@ from unittest.mock import AsyncMock
 
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.hidromotic.client import HidromoticClient
+from custom_components.hidromotic.client import HidromoticClient, normalize_mac_address
 
 
 class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_mac_address_is_normalized_and_validated(self) -> None:
+        self.assertEqual(
+            normalize_mac_address("AA:BB:CC:DD:EE:FF"),
+            "aabbccddeeff",
+        )
+        self.assertEqual(
+            normalize_mac_address("AA-BB-CC-DD-EE-FF"),
+            "aabbccddeeff",
+        )
+        self.assertIsNone(normalize_mac_address("unknown"))
+        self.assertIsNone(normalize_mac_address(None))
+
     async def test_riego_zone_duration_uses_zero_based_hex_zone_index(self) -> None:
         client = HidromoticClient("localhost")
         client._send_command = AsyncMock()
@@ -112,12 +124,15 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
 
         await client._process_text(
             '{"result":{"id":"device-1","uptime":20,'
+            '"mac":"AA:BB:CC:DD:EE:FF",'
             '"wifi":{"sta":{"ssid":"garden","ip":"192.0.2.1",'
             '"rssi":-60,"routertime":12}}}}'
         )
 
         self.assertEqual(len(updates), 1)
         self.assertEqual(client.data["device_id"], "device-1")
+        self.assertEqual(client.data["mac"], "AA:BB:CC:DD:EE:FF")
+        self.assertTrue(client.mac_ready.is_set())
         self.assertEqual(client.data["wifi_ssid"], "garden")
         self.assertEqual(client.data["wifi_ip"], "192.0.2.1")
         self.assertEqual(client.data["wifi_signal"], 80)
