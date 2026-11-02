@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, TANK_EMPTY, TANK_FULL
+from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,12 +47,6 @@ async def async_setup_entry(
         for tank_id, tank_data in tanks.items():
             if tank_id not in added_tanks:
                 added_tanks.add(tank_id)
-                new_entities.append(
-                    HidromoticTankFullSensor(coordinator, entry, tank_id, tank_data)
-                )
-                new_entities.append(
-                    HidromoticTankEmptySensor(coordinator, entry, tank_id, tank_data)
-                )
 
         inputs = coordinator.client.data.get("inputs", {})
         for input_id, input_data in inputs.items():
@@ -164,52 +158,6 @@ class HidromoticTankBaseBinarySensor(
         if tank:
             nivel = tank.get("nivel", 0xFF)
             return nivel != 0xFF and nivel not in (2, 3) and super().available
-        return False
-
-
-class HidromoticTankFullSensor(HidromoticTankBaseBinarySensor):
-    """Binary sensor for tank full status."""
-
-    def __init__(
-        self,
-        coordinator: HidromoticCoordinator,
-        entry: HidromoticConfigEntry,
-        tank_id: int,
-        tank_data: dict[str, Any],
-    ) -> None:
-        super().__init__(
-            coordinator, entry, tank_id, tank_data, sensor_type="full", name_suffix="Lleno"
-        )
-
-    @property
-    def is_on(self) -> bool:
-        tanks = self.coordinator.get_tanks()
-        tank = tanks.get(self._tank_id)
-        if tank:
-            return tank.get("nivel", 0xFF) == TANK_FULL
-        return False
-
-
-class HidromoticTankEmptySensor(HidromoticTankBaseBinarySensor):
-    """Binary sensor for tank empty status."""
-
-    def __init__(
-        self,
-        coordinator: HidromoticCoordinator,
-        entry: HidromoticConfigEntry,
-        tank_id: int,
-        tank_data: dict[str, Any],
-    ) -> None:
-        super().__init__(
-            coordinator, entry, tank_id, tank_data, sensor_type="empty", name_suffix="Vacío"
-        )
-
-    @property
-    def is_on(self) -> bool:
-        tanks = self.coordinator.get_tanks()
-        tank = tanks.get(self._tank_id)
-        if tank:
-            return tank.get("nivel", 0xFF) == TANK_EMPTY
         return False
 
 

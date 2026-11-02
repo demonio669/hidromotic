@@ -89,3 +89,19 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(HomeAssistantError):
             await client._send_command("#@C;")
+
+    async def test_tank_level_matches_original_web_interface_values(self) -> None:
+        client = HidromoticClient("localhost")
+        client.data["tanks"] = {
+            0: {"nivel": 0},
+            1: {"nivel": 1},
+            2: {"nivel": 2},
+            3: {"nivel": 3},
+            4: {"nivel": 4},
+        }
+
+        self.assertEqual(client.get_tank_level(0), "full")
+        self.assertEqual(client.get_tank_level(1), "empty")
+        self.assertEqual(client.get_tank_level(2), "sensor_fail")
+        self.assertEqual(client.get_tank_level(3), "level_fail")
+        self.assertEqual(client.get_tank_level(4), "medium")

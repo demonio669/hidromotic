@@ -17,7 +17,16 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, PUMP_NO_WATER, PUMP_OFF, PUMP_ON, PUMP_RECOVERY
+from .const import (
+    DOMAIN,
+    PUMP_NO_WATER,
+    PUMP_OFF,
+    PUMP_ON,
+    PUMP_RECOVERY,
+    TANK_EMPTY,
+    TANK_FULL,
+    TANK_MEDIUM,
+)
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,6 +76,12 @@ async def async_setup_entry(
                 added_tanks.add(tank_id)
                 new_entities.append(
                     HidromoticTankLevelSensor(coordinator, entry, tank_id, tank_data)
+                )
+                new_entities.append(
+                    HidromoticTankEmptyStateSensor(coordinator, entry, tank_id, tank_data)
+                )
+                new_entities.append(
+                    HidromoticTankFullStateSensor(coordinator, entry, tank_id, tank_data)
                 )
 
         if new_entities:
@@ -372,3 +387,72 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
     @property
     def native_value(self) -> str:
         return self.coordinator.client.get_tank_level(self._tank_id)
+
+
+class HidromoticTankEmptyStateSensor(
+    CoordinatorEntity[HidromoticCoordinator], SensorEntity
+):
+    """Text sensor reporting whether a tank is empty as true or false."""
+
+    _attr_has_entity_name = True
+    _attr_icon = "mdi:water-alert"
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        tank_id: int,
+        tank_data: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._tank_id = tank_id
+        self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_empty"
+        base_label = tank_data.get("label") or f"Tanque {tank_id + 1}"
+        self._attr_name = f"{base_label} Vacío"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini"
+            if coordinator.client.data.get("is_mini")
+            else "CHI Smart",
+        )
+
+    @property
+    def available(self) -> bool:
+        tank = self.coordinator.get_tanks().get(self._tank_id)
+        if tank is None:
+            return False
+        level = tank.get("nivel", 0xFF)
+        return (
+            level in (TANK_FULL, TANK_EMPTY, TANK_MEDIUM)
+            and super().available
+        )
+
+    @property
+    def native_value(self) -> str:
+        tank = self.coordinator.get_tanks().get(self._tank_id)
+        return str(tank is not None and tank.get("nivel") == TANK_EMPTY).lower()
+
+
+class HidromoticTankFullStateSensor(HidromoticTankEmptyStateSensor):
+    """Text sensor reporting whether a tank is full as true or false."""
+
+    _attr_icon = "mdi:water"
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        tank_id: int,
+        tank_data: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator, entry, tank_id, tank_data)
+        self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_full"
+        base_label = tank_data.get("label") or f"Tanque {tank_id + 1}"
+        self._attr_name = f"{base_label} Lleno"
+
+    @property
+    def native_value(self) -> str:
+        tank = self.coordinator.get_tanks().get(self._tank_id)
+        return str(tank is not None and tank.get("nivel") == TANK_FULL).lower()
