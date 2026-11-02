@@ -58,6 +58,11 @@ puede crear:
   punto de acceso del CHI, modo de conexión y usuario de Hidromotic.
 - **Botón de diagnóstico** para reiniciar el dispositivo.
 
+En la información del dispositivo también se muestran la versión de la
+integración, el modo de conexión y, para Cloud, el usuario de Hidromotic. El ID
+del CHI aparece como número de serie. Estos datos también siguen disponibles
+como sensores.
+
 Podés usar los interruptores y controles desde la página del dispositivo,
 agregarlos a un panel o incorporarlos en automatizaciones y escenas. Los cambios
 de duración se envían al CHI; las entidades reflejan los recursos configurados

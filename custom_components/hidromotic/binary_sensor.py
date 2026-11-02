@@ -10,14 +10,13 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
-from .entity_helpers import output_is_available
+from .entity_helpers import hidromotic_device_info, output_is_available
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,13 +80,7 @@ class HidromoticExternalPauseBinarySensor(
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_external_pause"
         self._attr_name = "Pausa Externa"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini" if coordinator.client.data.get("is_mini") else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def is_on(self) -> bool:
@@ -108,13 +101,7 @@ class HidromoticRainBlockedBinarySensor(
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_rain_blocked"
         self._attr_name = "Riego Bloqueado por Lluvia"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini" if coordinator.client.data.get("is_mini") else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def is_on(self) -> bool:
@@ -147,15 +134,7 @@ class HidromoticTankBaseBinarySensor(
         self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_{sensor_type}"
         self._attr_name = f"{base_label} {name_suffix}"
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def available(self) -> bool:
@@ -197,15 +176,7 @@ class HidromoticPhysicalInputSensor(
         else:
             self._attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def is_on(self) -> bool:

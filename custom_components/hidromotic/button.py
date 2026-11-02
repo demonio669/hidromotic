@@ -6,12 +6,12 @@ import logging
 
 from homeassistant.components.button import ButtonEntity, ButtonDeviceClass
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
+from .entity_helpers import hidromotic_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,15 +48,7 @@ class HidromoticRebootButton(ButtonEntity):
         self._attr_unique_id = f"{entry.entry_id}_reboot_button"
         self._attr_name = "Reiniciar Dispositivo"
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     async def async_press(self) -> None:
         """Ejecuta la acción de reinicio al presionar el botón."""

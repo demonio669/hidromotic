@@ -12,14 +12,13 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.const import PERCENTAGE, UnitOfInformation, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo, EntityCategory
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
 from .const import (
     CONNECTION_TYPE_CLOUD,
-    DOMAIN,
     PUMP_NO_WATER,
     PUMP_OFF,
     PUMP_ON,
@@ -29,7 +28,11 @@ from .const import (
     TANK_MEDIUM,
 )
 from .coordinator import HidromoticCoordinator
-from .entity_helpers import output_is_available, update_output_entity_visibility
+from .entity_helpers import (
+    hidromotic_device_info,
+    output_is_available,
+    update_output_entity_visibility,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -133,15 +136,7 @@ class HidromoticDiagnosticBaseSensor(
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_{sensor_type}"
         self._attr_name = name
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
 
 class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntity):
@@ -158,15 +153,7 @@ class HidromoticPumpSensor(CoordinatorEntity[HidromoticCoordinator], SensorEntit
         super().__init__(coordinator)
         self._attr_unique_id = f"{entry.entry_id}_pump_status"
         self._attr_name = "Estado de bomba"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def native_value(self) -> str:
@@ -536,15 +523,7 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
         self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_level"
         self._attr_translation_key = "tank_level"
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def available(self) -> bool:
@@ -576,15 +555,7 @@ class HidromoticTankEmptyStateSensor(
         self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_empty"
         base_label = tank_data.get("label") or f"Tanque {tank_id + 1}"
         self._attr_name = f"{base_label} Vacío"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def available(self) -> bool:

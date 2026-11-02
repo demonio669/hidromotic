@@ -12,14 +12,17 @@ from typing import Any
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, STATE_ON
+from .const import STATE_ON
 from .coordinator import HidromoticCoordinator
-from .entity_helpers import output_is_available, update_output_entity_visibility
+from .entity_helpers import (
+    hidromotic_device_info,
+    output_is_available,
+    update_output_entity_visibility,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -143,15 +146,7 @@ class HidromoticBaseSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntit
         self._attr_unique_id = f"{entry.entry_id}_{entity_type}_{entity_id}"
         self._attr_name = entity_data.get("label") or default_name
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     def _get_collection(self) -> dict[int, dict[str, Any]]:
         method_map = {
@@ -336,15 +331,7 @@ class HidromoticAutoRiegoSwitch(CoordinatorEntity[HidromoticCoordinator], Switch
         self._attr_unique_id = f"{entry.entry_id}_auto_riego"
         self._attr_name = "Auto irrigation"
 
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="Hidromotic",
-            sw_version=coordinator.integration_version,
-            model="CHI Smart Mini"
-            if coordinator.client.data.get("is_mini")
-            else "CHI Smart",
-        )
+        self._attr_device_info = hidromotic_device_info(coordinator, entry)
 
     @property
     def is_on(self) -> bool:

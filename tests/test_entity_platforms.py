@@ -20,7 +20,7 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.entry.title = "CHI"
         self.entry.async_on_unload = MagicMock()
         self.coordinator = MagicMock()
-        self.coordinator.integration_version = "1.0.52"
+        self.coordinator.integration_version = "1.0.54"
         self.entry.runtime_data = self.coordinator
         self.coordinator.client.data = {"is_mini": True}
         self.coordinator.client.get_tank_level.return_value = "full"
@@ -225,19 +225,36 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_connection_diagnostic_sensors_report_mode_and_account(self) -> None:
-        mode = sensor.HidromoticConnectionModeSensor(self.coordinator, self.entry)
-        username = sensor.HidromoticCloudUsernameSensor(self.coordinator, self.entry)
-
-        self.assertEqual(mode.device_info.get("sw_version"), "1.0.52")
         self.coordinator.client.connection_type = "local"
         self.coordinator.client.account_username = None
-        self.assertEqual(mode.native_value, "Local")
-        self.assertEqual(username.native_value, "No aplica")
+        self.coordinator.client.data["device_id"] = "CHI/7096C4"
+
+        local_mode = sensor.HidromoticConnectionModeSensor(
+            self.coordinator, self.entry
+        )
+        self.assertEqual(local_mode.native_value, "Local")
+        self.assertEqual(local_mode.device_info.get("sw_version"), "1.0.54")
+        self.assertEqual(local_mode.device_info.get("model_id"), "Local")
+        self.assertEqual(
+            local_mode.device_info.get("serial_number"), "CHI/7096C4"
+        )
 
         self.coordinator.client.connection_type = "cloud"
         self.coordinator.client.account_username = "my-account"
-        self.assertEqual(mode.native_value, "Cloud")
+        cloud_mode = sensor.HidromoticConnectionModeSensor(
+            self.coordinator, self.entry
+        )
+        username = sensor.HidromoticCloudUsernameSensor(self.coordinator, self.entry)
+
+        self.assertEqual(cloud_mode.native_value, "Cloud")
         self.assertEqual(username.native_value, "my-account")
+        self.assertEqual(
+            cloud_mode.device_info.get("model_id"),
+            "Cloud - usuario: my-account",
+        )
+        self.assertEqual(
+            cloud_mode.device_info.get("serial_number"), "CHI/7096C4"
+        )
 
     async def test_diagnostic_sensors_expose_values_and_defaults(self) -> None:
         self.coordinator.client.data = {
