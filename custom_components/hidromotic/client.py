@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 import aiohttp
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
     OUTPUT_TYPE_CICLON,
@@ -160,8 +161,7 @@ class HidromoticClient:
     async def _send_command(self, command: str) -> None:
         """Envía un comando en formato JSON-RPC al WebSocket."""
         if not self._ws or self._ws.closed:
-            _LOGGER.warning("Cannot send command, not connected")
-            return
+            raise HomeAssistantError("No hay conexión con el dispositivo Hidromotic")
 
         async with self._lock:
             if command.startswith("#"):
@@ -173,10 +173,16 @@ class HidromoticClient:
 
             try:
                 await asyncio.wait_for(self._ws.send_str(payload), timeout=5.0)
-            except TimeoutError:
+            except TimeoutError as err:
                 _LOGGER.error("Timeout sending command '%s' to Hidromotic", command)
+                raise HomeAssistantError(
+                    "Tiempo de espera agotado al enviar un comando a Hidromotic"
+                ) from err
             except Exception as err:
                 _LOGGER.error("Error sending command to Hidromotic: %s", err)
+                raise HomeAssistantError(
+                    "No se pudo enviar el comando al dispositivo Hidromotic"
+                ) from err
 
     async def _listen(self) -> None:
         """Bucle principal para procesar los mensajes recibidos."""
@@ -224,6 +230,14 @@ class HidromoticClient:
             except Exception as err:
                 _LOGGER.debug("Reconnection attempt failed: %s", err)
 
+    def _notify_callbacks(self) -> None:
+        """Notify Home Assistant listeners that client data may have changed."""
+        for callback in tuple(self._callbacks):
+            try:
+                callback(self._data)
+            except Exception as err:
+                _LOGGER.error("Error in callback: %s", err)
+
     async def _process_text(self, data: str) -> None:
         """Procesa respuestas recibidas en formato JSON extrayendo información del sistema."""
         try:
@@ -244,7 +258,10 @@ class HidromoticClient:
                     if "mac" in result:
                         self._data["mac"] = result.get("mac", "unknown")
 
-                    wifi_data = result.get("wifi", {}).get("sta", {})
+                    wifi = result.get("wifi")
+                    wifi_data = wifi.get("sta", {}) if isinstance(wifi, dict) else {}
+                    if not isinstance(wifi_data, dict):
+                        wifi_data = {}
                     if "ssid" in wifi_data:
                         self._data["wifi_ssid"] = wifi_data.get("ssid")
                     if "ip" in wifi_data:
@@ -262,6 +279,7 @@ class HidromoticClient:
                         self._data["wifi_routertime"] = wifi_data.get("routertime", 0)
         except json.JSONDecodeError:
             _LOGGER.debug("Non-JSON text received: %s", data)
+        self._notify_callbacks()
 
     async def _process_binary(self, data: bytes) -> None:
         """Procesa tramas de datos binarios garantizando exclusión mutua."""
@@ -277,11 +295,7 @@ class HidromoticClient:
             elif cmd == "D":
                 await self._parse_running_data(data)
 
-        for callback in self._callbacks:
-            try:
-                callback(self._data)
-            except Exception as err:
-                _LOGGER.error("Error in callback: %s", err)
+        self._notify_callbacks()
 
     async def _parse_full_config(self, data: bytes) -> None:
         """Parsea la trama binaria inicial con la configuración completa del sistema."""
@@ -529,14 +543,15 @@ class HidromoticClient:
                 if idx + 2 < len(data):
                     self._data["bateria"] = data[idx + 1] | (data[idx + 2] << 8)
             elif data[idx] == 0x75:
-                if idx + 2 < len(data):
-                    self._data["uart_reset_count"] = data[idx + 1] | (data[idx + 2] << 8)
+                if idx + 3 < len(data):
+                    self._data["uart_reset_count"] = data[idx + 2] | (data[idx + 3] << 8)
             elif data[idx] == 0x63:
                 if idx + 2 < len(data):
                     self._data["esp_reset_count"] = data[idx + 1] | (data[idx + 2] << 8)
 
         if r_pos is not None and r_pos + 3 < len(data):
             self._data["auto_riego"] = data[r_pos + 1] != 0
+            self._data["active_horario"] = data[r_pos + 2]
             self._data["lluvia_bloqueado"] = data[r_pos + 3] == 1
 
         riego_header_size = 28 if is_mini else 40
@@ -589,6 +604,10 @@ class HidromoticClient:
 
     async def _parse_running_data(self, data: bytes) -> None:
         """Parsea actualizaciones parciales en tiempo real enviadas por la placa en la trama 'D'."""
+        if "pic_version" not in self._data:
+            _LOGGER.debug("Ignoring running data received before the full configuration")
+            return
+
         i = 6
         while i < len(data):
             section = chr(data[i])
@@ -606,12 +625,12 @@ class HidromoticClient:
                 elif i + 2 < len(data):
                     self._data["pump"]["estado"] = data[i + 1]
                     self._data["pump"]["pausa_externa"] = data[i + 2]
-                i += 6
+                i += 7
 
             elif section == "b":
                 if i + 2 < len(data):
                     self._data["bateria"] = data[i + 1] | (data[i + 2] << 8)
-                i += 2
+                i += 3
 
             elif section == "E":
                 if i + 2 < len(data):
@@ -626,9 +645,9 @@ class HidromoticClient:
 
             elif section == "R":
                 if i + 2 < len(data):
-                    self._data["auto_riego"] = data[i + 1] != 0
+                    self._data["active_horario"] = data[i + 1]
                     self._data["lluvia_bloqueado"] = data[i + 2] == 1
-                i += 2
+                i += 3
 
             elif section == "S":
                 step = 3
@@ -669,7 +688,7 @@ class HidromoticClient:
                         self._data["riegos"][riego_id]["duracion"] = (
                             data[i + 5] | (data[i + 6] << 8) | (data[i + 7] << 16) | (data[i + 8] << 24)
                         )
-                i += 8
+                i += 9
 
             elif section == "L":
                 if i + 3 < len(data):
@@ -679,9 +698,9 @@ class HidromoticClient:
                     duracion = 0
                     if tarea_id == 0 and i + 5 < len(data):
                         duracion = data[i + 4] | (data[i + 5] << 8)
-                        i += 5
+                        i += 6
                     else:
-                        i += 3
+                        i += 4
 
                     self._data["tareas"][tarea_id] = {
                         "id": tarea_id,
@@ -690,9 +709,9 @@ class HidromoticClient:
                         "duracion": duracion,
                     }
             elif section == "u":
-                if i + 2 < len(data):
-                    self._data["uart_reset_count"] = data[i + 1] | (data[i + 2] << 8)
-                i += 2
+                if i + 3 < len(data):
+                    self._data["uart_reset_count"] = data[i + 2] | (data[i + 3] << 8)
+                i += 4
             else:
                 i += 1
 

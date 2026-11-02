@@ -2,7 +2,7 @@
 
 Este módulo crea entidades tipo 'number' ÚNICAMENTE para:
 1. Ajustar el tiempo de llenado/filtrado de las Piletas en minutos.
-2. Ajustar la duración de las zonas de Riego HABILITADAS (minutos > 0).
+2. Ajustar la duración de las zonas de riego (0 a 9999 minutos).
 """
 
 from __future__ import annotations
@@ -36,9 +36,10 @@ async def async_setup_entry(
 
     @callback
     def async_add_number_entities() -> None:
-        """Add duration controls ONLY for enabled pools and active irrigation zones."""
+        """Add duration controls for pools and every irrigation program zone."""
         pools = coordinator.get_pools()
         riegos = coordinator.get_riegos()
+        zones = coordinator.get_zones()
         new_entities: list[NumberEntity] = []
 
         # 1. Controles de tiempo para Piletas
@@ -49,16 +50,14 @@ async def async_setup_entry(
                     HidromoticPoolDurationNumber(coordinator, entry, pool_id, pool_data)
                 )
 
-        # 2. Controles de tiempo EXCLUSIVAMENTE para Zonas de Riego habilitadas (> 0 min)
+        # 2. Controles de tiempo para todas las zonas de cada programa de riego
         max_zonas = 6 if coordinator.client.data.get("is_mini") else 12
         for riego_id, riego_data in riegos.items():
-            zonas = riego_data.get("zonas", {})
             for z_idx in range(max_zonas):
+                if z_idx not in zones:
+                    continue
                 entity_key = f"{riego_id}_z_{z_idx}"
-                duracion = zonas.get(f"duracion_{z_idx + 1}", 0)
-
-                # FILTRO DIRECTO: Si la duración es 0, no se crea ni se registra la entidad
-                if duracion > 0 and entity_key not in added_riego_zonas:
+                if entity_key not in added_riego_zonas:
                     added_riego_zonas.add(entity_key)
                     new_entities.append(
                         HidromoticRiegoZonaDurationNumber(
@@ -134,8 +133,8 @@ class HidromoticRiegoZonaDurationNumber(CoordinatorEntity[HidromoticCoordinator]
 
     _attr_has_entity_name = True
     _attr_native_unit_of_measurement = UnitOfTime.MINUTES
-    _attr_native_min_value = 1
-    _attr_native_max_value = 999
+    _attr_native_min_value = 0
+    _attr_native_max_value = 9999
     _attr_native_step = 1
     _attr_icon = "mdi:sprinkler-variant"
 

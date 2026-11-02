@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, TANK_FULL
+from .const import DOMAIN, TANK_EMPTY, TANK_FULL
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -209,7 +209,7 @@ class HidromoticTankEmptySensor(HidromoticTankBaseBinarySensor):
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
         if tank:
-            return tank.get("nivel", 0xFF) == TANK_FULL
+            return tank.get("nivel", 0xFF) == TANK_EMPTY
         return False
 
 
