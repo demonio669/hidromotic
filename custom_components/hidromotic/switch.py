@@ -236,9 +236,8 @@ class HidromoticTankSwitch(HidromoticBaseSwitch):
             modo_raw = item.get("modo", 0)
             attrs["mode_raw"] = modo_raw
             attrs["mode"] = "automatic" if modo_raw != 0 else "manual"
+            attrs["float_type"] = item.get("tipo_flotante", 0)
 
-            # Tiempo estimado / restante (etc)
-            attrs["etc"] = item.get("etc", 0)
         return attrs
 
     async def async_turn_on(self, **kwargs: Any) -> None:

@@ -3,7 +3,14 @@
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.hidromotic import binary_sensor, button, number, sensor, switch
+from custom_components.hidromotic import (
+    binary_sensor,
+    button,
+    number,
+    select,
+    sensor,
+    switch,
+)
 
 
 class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
@@ -20,6 +27,7 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.coordinator.client.is_auto_riego_on.return_value = True
         self.coordinator.client.reboot_device = AsyncMock()
         self.coordinator.client.set_output_duration = AsyncMock()
+        self.coordinator.async_set_tank_mode = AsyncMock()
         self.coordinator.client.set_auto_riego = AsyncMock()
         for method in (
             "async_set_zone_state",
@@ -124,6 +132,54 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
                 unittest.mock.call("zones", 0, 51),
             ]
         )
+
+    async def test_tank_duration_number_reads_writes_and_tracks_availability(self) -> None:
+        tank = {"slot_id": 3, "estado": 0, "duracion": 45}
+        self.coordinator.get_tanks.return_value = {0: tank}
+        entity = number.HidromoticTankDurationNumber(
+            self.coordinator, self.entry, 0, tank
+        )
+
+        self.assertTrue(entity.available)
+        self.assertEqual(entity.native_value, 45.0)
+        await entity.async_set_native_value(50)
+        self.coordinator.client.set_output_duration.assert_awaited_once_with(
+            "tanks", 0, 50
+        )
+
+        tank["estado"] = 7
+        self.assertFalse(entity.available)
+        self.coordinator.get_tanks.return_value = {}
+        self.assertIsNone(entity.native_value)
+        self.assertFalse(entity.available)
+
+    async def test_tank_mode_select_reports_and_updates_mode(self) -> None:
+        tank = {
+            "estado": 0,
+            "modo": 1,
+            "tipo_flotante": 1,
+            "label": "Cisterna",
+        }
+        self.coordinator.get_tanks.return_value = {0: tank}
+        entity = select.HidromoticTankModeSelect(
+            self.coordinator, self.entry, 0, tank
+        )
+
+        self.assertEqual(entity.options, ["Manual", "Automático"])
+        self.assertEqual(entity.current_option, "Automático")
+        self.assertTrue(entity.available)
+        await entity.async_select_option("Manual")
+        self.coordinator.async_set_tank_mode.assert_awaited_once_with(0, False)
+
+        tank["modo"] = 0
+        self.assertEqual(entity.current_option, "Manual")
+        tank["tipo_flotante"] = 0
+        self.assertFalse(entity.available)
+        with self.assertRaises(ValueError):
+            await entity.async_select_option("Invalid")
+
+        self.coordinator.get_tanks.return_value = {}
+        self.assertIsNone(entity.current_option)
 
     async def test_tank_sensors_report_values_and_availability(self) -> None:
         self.coordinator.get_tanks.return_value = {
@@ -313,6 +369,42 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
             listener()
 
         self.assertEqual(update_visibility.call_count, 24)
+
+    async def test_number_and_select_setup_add_tank_controls_when_enabled(self) -> None:
+        self.coordinator.get_pools.return_value = {}
+        self.coordinator.get_zones.return_value = {}
+        tanks = {0: {"estado": 7, "modo": 0, "tipo_flotante": 1}}
+        self.coordinator.get_tanks.return_value = tanks
+        add_numbers = MagicMock()
+        add_selects = MagicMock()
+
+        with (
+            patch(
+                "custom_components.hidromotic.number.update_output_entity_visibility"
+            ),
+            patch(
+                "custom_components.hidromotic.select.update_output_entity_visibility"
+            ),
+        ):
+            await number.async_setup_entry(MagicMock(), self.entry, add_numbers)
+            await select.async_setup_entry(MagicMock(), self.entry, add_selects)
+            number_listener = self.coordinator.async_add_listener.call_args_list[-2].args[0]
+            select_listener = self.coordinator.async_add_listener.call_args_list[-1].args[0]
+            self.assertEqual(add_numbers.call_count, 0)
+            self.assertEqual(add_selects.call_count, 0)
+
+            tanks[0]["estado"] = 0
+            number_listener()
+            select_listener()
+
+        self.assertEqual(add_numbers.call_count, 1)
+        self.assertIsInstance(
+            add_numbers.call_args.args[0][0], number.HidromoticTankDurationNumber
+        )
+        self.assertEqual(add_selects.call_count, 1)
+        self.assertIsInstance(
+            add_selects.call_args.args[0][0], select.HidromoticTankModeSelect
+        )
 
     async def test_button_setup_adds_restart_entity(self) -> None:
         add_entities = MagicMock()

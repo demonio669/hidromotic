@@ -36,12 +36,14 @@ async def async_setup_entry(
     coordinator = entry.runtime_data
     added_pools: set[int] = set()
     added_zones: set[int] = set()
+    added_tanks: set[int] = set()
 
     @callback
     def async_add_number_entities() -> None:
         """Add duration controls for pools and irrigation zones."""
         pools = coordinator.get_pools()
         zones = coordinator.get_zones()
+        tanks = coordinator.get_tanks()
         new_entities: list[NumberEntity] = []
 
         # 1. Controles de tiempo para Piletas
@@ -53,6 +55,16 @@ async def async_setup_entry(
                 added_pools.add(pool_id)
                 new_entities.append(
                     HidromoticPoolDurationNumber(coordinator, entry, pool_id, pool_data)
+                )
+
+        for tank_id, tank_data in tanks.items():
+            unique_id = f"{entry.entry_id}_tank_{tank_id}_duration_set"
+            available = output_is_available(tank_data)
+            update_output_entity_visibility(hass, "number", unique_id, available)
+            if available and tank_id not in added_tanks:
+                added_tanks.add(tank_id)
+                new_entities.append(
+                    HidromoticTankDurationNumber(coordinator, entry, tank_id, tank_data)
                 )
 
         # 2. Controles de duración de las salidas de zona, no de los programas.
@@ -186,3 +198,52 @@ class HidromoticZoneDurationNumber(CoordinatorEntity[HidromoticCoordinator], Num
     async def async_set_native_value(self, value: float) -> None:
         minutes = int(value)
         await self.coordinator.client.set_output_duration("zones", self._zone_id, minutes)
+
+
+class HidromoticTankDurationNumber(CoordinatorEntity[HidromoticCoordinator], NumberEntity):
+    """Control numérico para ajustar el tiempo de llenado del tanque."""
+
+    _attr_has_entity_name = True
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_min_value = 1
+    _attr_native_max_value = 9999
+    _attr_native_step = 1
+    _attr_icon = "mdi:timer-cog"
+
+    def __init__(
+        self,
+        coordinator: HidromoticCoordinator,
+        entry: HidromoticConfigEntry,
+        tank_id: int,
+        tank_data: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._tank_id = tank_id
+        self._attr_unique_id = f"{entry.entry_id}_tank_{tank_id}_duration_set"
+        base_label = tank_data.get("label") or f"Tanque {tank_id + 1}"
+        self._attr_name = f"{base_label} Tiempo de Llenado"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=entry.title,
+            manufacturer="Hidromotic",
+            model="CHI Smart Mini"
+            if coordinator.client.data.get("is_mini")
+            else "CHI Smart",
+        )
+
+    @property
+    def available(self) -> bool:
+        tank = self.coordinator.get_tanks().get(self._tank_id)
+        return output_is_available(tank) and super().available
+
+    @property
+    def native_value(self) -> float | None:
+        tank = self.coordinator.get_tanks().get(self._tank_id)
+        if tank is None:
+            return None
+        return float(tank.get("duracion", 0))
+
+    async def async_set_native_value(self, value: float) -> None:
+        await self.coordinator.client.set_output_duration(
+            "tanks", self._tank_id, int(value)
+        )

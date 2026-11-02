@@ -299,7 +299,9 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.data["pump"]["marcha"], 1234)
         self.assertEqual(client.data["inputs"][3]["tipo"], 4)
         self.assertEqual(client.data["zones"][0]["label"], "Z1")
-        self.assertEqual(client.data["tanks"][0]["nivel"], 3)
+        self.assertEqual(client.data["tanks"][0]["nivel"], 2)
+        self.assertEqual(client.data["tanks"][0]["tipo_flotante"], 3)
+        self.assertEqual(client.data["tanks"][0]["duracion"], 6)
         self.assertEqual(client.data["pools"][0]["duracion"], 7)
         self.assertEqual(client.data["mangueras"][0]["duracion"], 8)
         self.assertEqual(client.data["ciclon"][0]["proximo_ciclon"], 0x0908)
@@ -515,6 +517,27 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         await client.set_auto_riego(True)
         await client.reboot_device()
         await client.refresh()
+
+    async def test_tank_mode_configuration_uses_tank_index_and_float_guard(self) -> None:
+        client = HidromoticClient("chi.local")
+        client._send_command = AsyncMock()
+        client.data["tanks"] = {
+            10: {"modo": 0, "tipo_flotante": 1},
+            1: {"modo": 0, "tipo_flotante": 0},
+        }
+        callback = MagicMock()
+        client.register_callback(callback)
+
+        await client.set_tank_mode(10, True)
+
+        client._send_command.assert_awaited_once_with("#@T10A1;#@+;")
+        self.assertEqual(client.data["tanks"][10]["modo"], 1)
+        callback.assert_called_once_with(client.data)
+
+        with self.assertRaises(HomeAssistantError):
+            await client.set_tank_mode(1, True)
+        client._send_command.assert_awaited_once()
+
     async def test_missing_outputs_do_not_send_commands(self) -> None:
         client = HidromoticClient("chi.local")
         client._send_command = AsyncMock()

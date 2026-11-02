@@ -66,6 +66,7 @@ class HidromoticCoordinatorTests(unittest.IsolatedAsyncioTestCase):
         command_methods = {
             "async_set_zone_state": "set_zone_state",
             "async_set_tank_state": "set_tank_state",
+            "async_set_tank_mode": "set_tank_mode",
             "async_set_pool_state": "set_pool_state",
             "async_set_manguera_state": "set_manguera_state",
             "async_set_ciclon_state": "set_ciclon_state",

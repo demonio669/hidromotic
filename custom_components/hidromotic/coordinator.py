@@ -86,6 +86,9 @@ class HidromoticCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_set_tank_state(self, tank_id: int, on: bool) -> None:
         await self.client.set_tank_state(tank_id, on)
 
+    async def async_set_tank_mode(self, tank_id: int, automatic: bool) -> None:
+        await self.client.set_tank_mode(tank_id, automatic)
+
     async def async_set_pool_state(self, pool_id: int, on: bool) -> None:
         await self.client.set_pool_state(pool_id, on)
 

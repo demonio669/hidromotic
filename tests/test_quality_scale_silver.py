@@ -4,7 +4,14 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock
 
-from custom_components.hidromotic import binary_sensor, button, number, sensor, switch
+from custom_components.hidromotic import (
+    binary_sensor,
+    button,
+    number,
+    select,
+    sensor,
+    switch,
+)
 from custom_components.hidromotic.coordinator import HidromoticCoordinator
 
 
@@ -15,6 +22,7 @@ class HidromoticSilverRequirementTests(unittest.TestCase):
         self.assertEqual(button.PARALLEL_UPDATES, 1)
         self.assertEqual(sensor.PARALLEL_UPDATES, 0)
         self.assertEqual(binary_sensor.PARALLEL_UPDATES, 0)
+        self.assertEqual(select.PARALLEL_UPDATES, 1)
 
     def test_coordinator_logs_only_connection_state_transitions(self) -> None:
         coordinator = object.__new__(HidromoticCoordinator)

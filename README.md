@@ -42,8 +42,10 @@ puede crear:
 
 - **Interruptores** para zonas de riego, programas, tanques, piscinas, mangueras
   e HidroCiclón, además del control general de riego automático.
-- **Controles numéricos** para ajustar en minutos la duración de las zonas y el
-  tiempo de llenado de piscinas.
+- **Selectores de modo** para elegir entre manual y automático en cada tanque
+  que tenga un flotante configurado.
+- **Controles numéricos** para ajustar en minutos la duración de las zonas,
+  piscinas y tanques.
 - **Sensores** de estado de bomba, nivel de tanque, entradas físicas y datos de
   diagnóstico y conectividad.
 - **Botón de diagnóstico** para reiniciar el dispositivo.

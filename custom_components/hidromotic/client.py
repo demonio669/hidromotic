@@ -490,9 +490,10 @@ class HidromoticClient:
                             "slot_id": slot_id,
                             "estado": estado,
                             "label": label or f"Tanque {tipo_id + 1}",
-                            "nivel": extras[2] if extras else 0,
+                            "duracion": duracion,
+                            "nivel": extras[1] if extras else 0,
                             "modo": extras[0] if extras else 0,
-                            "etc": extras[1] if extras else 0,
+                            "tipo_flotante": extras[2] if extras else 0,
                         }
                     elif is_pileta:
                         self._data["pools"][tipo_id] = {
@@ -800,6 +801,22 @@ class HidromoticClient:
 
     async def set_tank_state(self, tank_id: int, on: bool) -> None:
         await self._set_output_state("tanks", tank_id, on)
+
+    async def set_tank_mode(self, tank_id: int, automatic: bool) -> None:
+        """Set a tank to automatic or manual mode."""
+        tank = self._data.get("tanks", {}).get(tank_id)
+        if not tank:
+            _LOGGER.warning("Tank %d not found while changing mode", tank_id)
+            return
+        if tank.get("tipo_flotante", 0) == 0:
+            raise HomeAssistantError(
+                "No se puede cambiar el modo del tanque sin un flotante configurado"
+            )
+
+        mode = 1 if automatic else 0
+        await self._send_command(f"#@T{tank_id}A{mode};#@+;")
+        tank["modo"] = mode
+        self._notify_callbacks()
 
     async def set_pool_state(self, pool_id: int, on: bool) -> None:
         await self._set_output_state("pools", pool_id, on)
