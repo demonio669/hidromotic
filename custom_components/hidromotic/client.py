@@ -205,6 +205,14 @@ class HidromoticClient:
 
     async def _send_command(self, command: str) -> None:
         """Envía un comando en formato JSON-RPC al WebSocket."""
+        if command.startswith("#"):
+            payload = f'{{"method":"hdmt","params":{{"c":"{command}"}}}}'
+        else:
+            payload = f'{{"id":1111,"method":"hdmt","params":{{"c":"{command}"}}}}'
+        await self._send_text_payload(payload, command)
+
+    async def _send_text_payload(self, payload: str, command: str) -> None:
+        """Send a text payload while respecting the controller command interval."""
         async with self._command_lock:
             loop = asyncio.get_running_loop()
             if self._last_command_sent_at is not None:
@@ -219,11 +227,6 @@ class HidromoticClient:
                     raise HomeAssistantError(
                         "No hay conexión con el dispositivo Hidromotic"
                     )
-
-                if command.startswith("#"):
-                    payload = f'{{"method":"hdmt","params":{{"c":"{command}"}}}}'
-                else:
-                    payload = f'{{"id":1111,"method":"hdmt","params":{{"c":"{command}"}}}}'
 
                 _LOGGER.debug("Protocol TX (request): %s", payload)
                 self._last_command_sent_at = loop.time()

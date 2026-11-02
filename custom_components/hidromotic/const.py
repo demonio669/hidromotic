@@ -2,6 +2,10 @@
 
 DOMAIN = "hidromotic"
 
+CONF_CONNECTION_TYPE = "connection_type"
+CONNECTION_TYPE_LOCAL = "local"
+CONNECTION_TYPE_CLOUD = "cloud"
+
 # Time to wait for device metadata and configuration after WebSocket connection
 INITIAL_DATA_WAIT_SECONDS = 10
 

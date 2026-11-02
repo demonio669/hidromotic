@@ -11,7 +11,12 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .client import HidromoticClient, hex_to_int, int_to_hex, normalize_mac_address
-from .const import DOMAIN
+from .cloud_client import HidromoticCloudClient
+from .const import (
+    CONF_CONNECTION_TYPE,
+    CONNECTION_TYPE_CLOUD,
+    DOMAIN,
+)
 from .coordinator import HidromoticCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,17 +35,25 @@ type HidromoticConfigEntry = ConfigEntry[HidromoticCoordinator]
 
 async def async_setup_entry(hass: HomeAssistant, entry: HidromoticConfigEntry) -> bool:
     """Set up Hidromotic from a config entry."""
-    host = entry.data[CONF_HOST]
-
     # Reutiliza la sesión HTTP global administrada por Home Assistant
     session = async_get_clientsession(hass)
-    client = HidromoticClient(host, session=session)
+    if entry.data.get(CONF_CONNECTION_TYPE) == CONNECTION_TYPE_CLOUD:
+        client = HidromoticCloudClient(
+            entry.data["username"],
+            entry.data["password"],
+            session=session,
+        )
+        connection_name = "Hidromotic cloud"
+    else:
+        host = entry.data[CONF_HOST]
+        client = HidromoticClient(host, session=session)
+        connection_name = f"Hidromotic device at {host}"
 
     coordinator = HidromoticCoordinator(hass, client, entry)
 
     if not await coordinator.async_setup():
         await coordinator.async_shutdown()
-        raise ConfigEntryNotReady(f"Failed to connect to Hidromotic device at {host}")
+        raise ConfigEntryNotReady(f"Failed to connect to {connection_name}")
 
     mac = normalize_mac_address(client.data.get("mac"))
     if mac is None:

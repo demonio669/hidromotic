@@ -8,19 +8,36 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
-from homeassistant.const import CONF_HOST
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.selector import TextSelector
 
 from .client import HidromoticClient, normalize_mac_address
-from .const import DOMAIN, INITIAL_DATA_WAIT_SECONDS
+from .cloud_client import HidromoticCloudClient
+from .const import (
+    CONF_CONNECTION_TYPE,
+    CONNECTION_TYPE_CLOUD,
+    CONNECTION_TYPE_LOCAL,
+    DOMAIN,
+    INITIAL_DATA_WAIT_SECONDS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_HOST): str,
+        vol.Required(CONF_CONNECTION_TYPE, default=CONNECTION_TYPE_LOCAL): vol.In(
+            [CONNECTION_TYPE_LOCAL, CONNECTION_TYPE_CLOUD]
+        ),
+    }
+)
+STEP_LOCAL_DATA_SCHEMA = vol.Schema({vol.Required(CONF_HOST): str})
+STEP_CLOUD_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): str,
+        vol.Required(CONF_PASSWORD): TextSelector({"type": "password"}),
     }
 )
 
@@ -28,7 +45,15 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect."""
     session = async_get_clientsession(hass)
-    client = HidromoticClient(data[CONF_HOST], session=session)
+    connection_type = data.get(CONF_CONNECTION_TYPE, CONNECTION_TYPE_LOCAL)
+    if connection_type == CONNECTION_TYPE_CLOUD:
+        client = HidromoticCloudClient(
+            data[CONF_USERNAME],
+            data[CONF_PASSWORD],
+            session=session,
+        )
+    else:
+        client = HidromoticClient(data[CONF_HOST], session=session)
 
     try:
         if not await client.connect():
@@ -50,11 +75,16 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
         is_mini = client.data.get("is_mini", False)
         name = "CHI Smart Mini" if is_mini else "CHI Smart"
+        title = (
+            f"{name} (Cloud)"
+            if connection_type == CONNECTION_TYPE_CLOUD
+            else f"{name} ({data[CONF_HOST]})"
+        )
 
     finally:
         await client.disconnect()
 
-    return {"title": f"{name} ({data[CONF_HOST]})", "device_id": device_id}
+    return {"title": title, "device_id": device_id}
 
 
 class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -65,12 +95,51 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Handle the initial step."""
-        errors: dict[str, str] = {}
-
+        """Choose local or cloud connectivity."""
         if user_input is not None:
+            if user_input[CONF_CONNECTION_TYPE] == CONNECTION_TYPE_CLOUD:
+                return await self.async_step_cloud()
+            return await self.async_step_local()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_USER_DATA_SCHEMA,
+        )
+
+    async def async_step_local(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure a direct connection to the CHI."""
+        return await self._async_finish_connection(
+            user_input,
+            CONNECTION_TYPE_LOCAL,
+            STEP_LOCAL_DATA_SCHEMA,
+            "local",
+        )
+
+    async def async_step_cloud(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Configure a connection through the Hidromotic account cloud."""
+        return await self._async_finish_connection(
+            user_input,
+            CONNECTION_TYPE_CLOUD,
+            STEP_CLOUD_DATA_SCHEMA,
+            "cloud",
+        )
+
+    async def _async_finish_connection(
+        self,
+        user_input: dict[str, Any] | None,
+        connection_type: str,
+        schema: vol.Schema,
+        step_id: str,
+    ) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            data = {CONF_CONNECTION_TYPE: connection_type, **user_input}
             try:
-                info = await validate_input(self.hass, user_input)
+                info = await validate_input(self.hass, data)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
             except Exception:
@@ -78,12 +147,12 @@ class HidromoticConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "unknown"
             else:
                 await self.async_set_unique_id(info["device_id"])
-                self._abort_if_unique_id_configured(updates={CONF_HOST: user_input[CONF_HOST]})
-                return self.async_create_entry(title=info["title"], data=user_input)
+                self._abort_if_unique_id_configured(updates=data)
+                return self.async_create_entry(title=info["title"], data=data)
 
         return self.async_show_form(
-            step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
+            step_id=step_id,
+            data_schema=schema,
             errors=errors,
         )
 

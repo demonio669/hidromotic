@@ -6,6 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.hidromotic import async_setup_entry, async_unload_entry
+from custom_components.hidromotic.const import (
+    CONF_CONNECTION_TYPE,
+    CONNECTION_TYPE_CLOUD,
+)
 
 
 class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
@@ -46,6 +50,31 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result)
         self.assertIs(self.entry.runtime_data, self.coordinator)
         self.hass.config_entries.async_forward_entry_setups.assert_awaited_once()
+
+    async def test_setup_entry_selects_cloud_client_from_config_entry(self) -> None:
+        self.entry.data = {
+            CONF_CONNECTION_TYPE: CONNECTION_TYPE_CLOUD,
+            "username": "account",
+            "password": "secret",
+        }
+        session = object()
+        with (
+            patch(
+                "custom_components.hidromotic.async_get_clientsession",
+                return_value=session,
+            ),
+            patch(
+                "custom_components.hidromotic.HidromoticCloudClient",
+                return_value=self.client,
+            ) as cloud_client,
+        ):
+            await async_setup_entry(self.hass, self.entry)
+
+        cloud_client.assert_called_once_with(
+            "account",
+            "secret",
+            session=session,
+        )
 
     async def test_setup_entry_updates_normalized_unique_id(self) -> None:
         self.entry.unique_id = "not-a-mac"

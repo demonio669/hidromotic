@@ -10,13 +10,28 @@
     "step": {
       "user": {
         "data": {
+          "connection_type": "Connection method"
+        },
+        "description": "Choose how Home Assistant connects to your CHI.",
+        "title": "Connect to Hidromotic"
+      },
+      "local": {
+        "data": {
           "host": "[%key:common::config_flow::data::host%]"
         },
         "data_description": {
           "host": "The hostname or IP address of your Hidromotic device."
         },
         "description": "Enter the IP address of your Hidromotic irrigation controller.",
-        "title": "Connect to Hidromotic"
+        "title": "Local connection"
+      },
+      "cloud": {
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        },
+        "description": "Use the account associated with your CHI at hidromotic.com.",
+        "title": "Hidromotic Cloud"
       }
     }
   },

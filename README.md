@@ -25,15 +25,13 @@ cambios.
 
 1. En Home Assistant, abrí **Ajustes > Dispositivos y servicios**.
 2. Seleccioná **Añadir integración** y buscá **Hidromotic**.
-3. En el campo **Host**, ingresá la dirección IP o el nombre de host del CHI
-   en la red local. Podés encontrar la IP en la lista de dispositivos/DHCP del
-   router o en la configuración de red del equipo. No incluyas `http://` ni
-   `https://`.
-4. Confirmá para finalizar. El dispositivo debe estar encendido y accesible
-   desde Home Assistant durante la configuración.
-
-Se recomienda asignar una IP fija al CHI o configurar una reserva DHCP en el
-router, para que la dirección no cambie.
+3. Elegí el método de conexión:
+   - **Local**: ingresá la dirección IP o el nombre de host del CHI en la red
+     local. No incluyas `http://` ni `https://`. Se recomienda una reserva DHCP.
+   - **Cloud**: ingresá el usuario y la contraseña de la cuenta de
+     [hidromotic.com](https://hidromotic.com/) asociada al CHI.
+4. Confirmá para finalizar. Para Local, el CHI debe ser accesible desde Home
+   Assistant. Para Cloud, Home Assistant necesita acceso a Internet.
 
 ## Uso
 
