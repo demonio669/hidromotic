@@ -151,7 +151,10 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "custom_components.hidromotic.client", level="DEBUG"
         ) as logs:
             await client._send_command("e")
-            await client._process_text('{"result":{"id":"chi"}}')
+            await client._process_text(
+                '{"result":{"id":"chi","wifi":{"sta":{"pass":"secret-value"},'
+                '"ap":{"password":"another-secret"}}}}'
+            )
             await client._process_binary(b"?\x00")
 
         output = "\n".join(logs.output)
@@ -159,7 +162,11 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
             'Protocol TX (request): {"id":1111,"method":"hdmt","params":{"c":"e"}}',
             output,
         )
-        self.assertIn("Protocol RX (JSON response): {'result': {'id': 'chi'}}", output)
+        self.assertIn("Protocol RX (JSON response):", output)
+        self.assertIn("'pass': '[REDACTED]'", output)
+        self.assertIn("'password': '[REDACTED]'", output)
+        self.assertNotIn("secret-value", output)
+        self.assertNotIn("another-secret", output)
         self.assertIn("Protocol RX (binary response, command=?, length=2): 3f 00", output)
 
     async def test_send_command_enforces_minimum_interval(self) -> None:
@@ -355,6 +362,31 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.data["bateria"], 99)
         self.assertEqual(client.data["uart_reset_count"], 4)
         self.assertEqual(client.data["esp_reset_count"], 3)
+
+    async def test_full_configuration_logs_tank_and_input_offsets(self) -> None:
+        client = HidromoticClient("chi.local")
+        frame = bytearray(16)
+        frame[0] = ord("C")
+        frame[2:4] = (845).to_bytes(2, "little")
+        frame[4:6] = (65).to_bytes(2, "little")
+        frame.extend([ord("E"), *([1, 0, 0, 0] * 4)])
+        frame.extend([ord("S"), 0x21, 0, 30, 0, 0, 0, 0, 0, 0])
+        frame.extend([0] * (12 * 6 - 6))
+
+        with self.assertLogs(
+            "custom_components.hidromotic.client", level="DEBUG"
+        ) as logs:
+            self.assertTrue(await client._parse_full_config(bytes(frame)))
+
+        output = "\n".join(logs.output)
+        self.assertIn("pic_version=845 config_version=65", output)
+        self.assertIn("Full config E section: offset=16 consumed=17", output)
+        self.assertIn(
+            "Full config tank: slot=0 offset=34 type=0x21 state=0 duration=30",
+            output,
+        )
+        self.assertIn("mode=0 level=0 float_type=0", output)
+        self.assertIn("Full config parsed: inputs=4 outputs=1 tanks=1", output)
 
     async def test_full_configuration_rejects_truncated_sections(self) -> None:
         markers = (

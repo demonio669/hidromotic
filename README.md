@@ -60,6 +60,27 @@ detener equipos y el riego físico. Verificá la instalación y las condiciones 
 riego antes de automatizar esos controles. Usá el botón de reinicio únicamente
 cuando necesites reiniciar el CHI.
 
+## Registros de depuración
+
+Para obtener registros detallados de la integración, agregá esta configuración
+a `configuration.yaml`:
+
+```yaml
+logger:
+  default: warning
+  logs:
+    custom_components.hidromotic: debug
+```
+
+Si ya tenés una sección `logger:`, agregá `custom_components.hidromotic: debug`
+dentro de `logs:` en lugar de crear una segunda sección. Después, reiniciá Home
+Assistant. Los mensajes de la integración aparecerán en **Ajustes > Sistema >
+Registros**; buscá `custom_components.hidromotic`.
+
+El nivel DEBUG incluye detalles del protocolo y tramas binarias para facilitar
+el diagnóstico. Las credenciales de campos reconocidos se ocultan, pero revisá
+y redactá los registros antes de compartirlos.
+
 ## Ayuda y créditos
 
 Para aprender a configurar la computadora de riego, consultá el

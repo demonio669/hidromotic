@@ -79,6 +79,26 @@ def normalize_mac_address(mac: Any) -> str | None:
     return normalized
 
 
+def _redact_sensitive_data(value: Any) -> Any:
+    """Return a copy with credential-like fields redacted for debug logging."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                "[REDACTED]"
+                if isinstance(key, str)
+                and any(
+                    sensitive in key.lower()
+                    for sensitive in ("pass", "secret", "token", "credential", "api_key")
+                )
+                else _redact_sensitive_data(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_data(item) for item in value]
+    return value
+
+
 class HidromoticClient:
     """Cliente WebSocket asíncrono para la comunicación con la controladora Hidromotic."""
 
@@ -282,7 +302,7 @@ class HidromoticClient:
         """Procesa respuestas recibidas en formato JSON extrayendo información del sistema."""
         try:
             parsed = json.loads(data)
-            _LOGGER.debug("Protocol RX (JSON response): %s", parsed)
+            _LOGGER.debug("Protocol RX (JSON response): %s", _redact_sensitive_data(parsed))
 
             if isinstance(parsed, dict):
                 result = parsed.get("result", parsed)
@@ -321,7 +341,7 @@ class HidromoticClient:
                     if "routertime" in wifi_data:
                         self._data["wifi_routertime"] = wifi_data.get("routertime", 0)
         except json.JSONDecodeError:
-            _LOGGER.debug("Protocol RX (text response): %s", data)
+            _LOGGER.debug("Protocol RX (non-JSON text response, length=%d)", len(data))
         self._notify_callbacks()
 
     async def _process_binary(self, data: bytes) -> None:
@@ -363,6 +383,14 @@ class HidromoticClient:
         self._data["pic_version"] = data[2] | (data[3] << 8)
         self._data["pic_id"] = f"0x{data[6]:02X}"
         self._data["pic_rev"] = data[7]
+        _LOGGER.debug(
+            "Full config header: model=%s pic_version=%d config_version=%d "
+            "frame_length=%d",
+            self._data["pic_name"],
+            self._data["pic_version"],
+            int.from_bytes(data[4:6], "little"),
+            len(data),
+        )
 
         def bcd_to_int(value: int) -> int:
             return (((value & 0xF0) >> 4) * 10) + (value & 0x0F)
@@ -425,6 +453,7 @@ class HidromoticClient:
             elif section == ord("E"):
                 if remaining < 17:
                     return truncated("E", i)
+                section_offset = i
                 inputs = {}
                 for input_id in range(4):
                     offset = i + 1 + input_id * 4
@@ -442,14 +471,25 @@ class HidromoticClient:
                     }
                 self._data["inputs"] = inputs
                 i += 17
+                _LOGGER.debug(
+                    "Full config E section: offset=%d consumed=17 raw=%s inputs=%s "
+                    "next_offset=%d next_byte=%s",
+                    section_offset,
+                    data[section_offset:i].hex(" "),
+                    inputs,
+                    i,
+                    f"0x{data[i]:02X}" if i < len(data) else "end",
+                )
 
             elif section == ord("S"):
                 outputs_seen = True
+                section_offset = i
                 i += 1
                 for slot_id in range(max_outputs):
                     if len(data) - i < 6:
                         return truncated("S", i)
 
+                    slot_offset = i
                     tipo, bomba = data[i], data[i + 1]
                     duracion = data[i + 2] | (data[i + 3] << 8)
                     estado = data[i + 4]
@@ -483,6 +523,22 @@ class HidromoticClient:
                         return truncated("S output details", i)
                     extras = data[i : i + extra_size]
                     i += extra_size
+                    if is_tank:
+                        _LOGGER.debug(
+                            "Full config tank: slot=%d offset=%d type=0x%02X "
+                            "state=%d duration=%d label=%r extras=%s mode=%d "
+                            "level=%d float_type=%d",
+                            slot_id,
+                            slot_offset,
+                            tipo,
+                            estado,
+                            duracion,
+                            label,
+                            extras.hex(" "),
+                            extras[0] if extras else 0,
+                            extras[1] if len(extras) > 1 else 0,
+                            extras[2] if len(extras) > 2 else 0,
+                        )
 
                     output_data = {
                         "id": tipo_id,
@@ -553,6 +609,12 @@ class HidromoticClient:
                             if extras
                             else 0,
                         }
+                _LOGGER.debug(
+                    "Full config S section: offset=%d next_offset=%d slots=%d",
+                    section_offset,
+                    i,
+                    max_outputs,
+                )
 
             elif section == ord("H"):
                 if remaining < riego_header_size:
@@ -630,7 +692,11 @@ class HidromoticClient:
                 i += 3
 
             else:
-                _LOGGER.debug("Skipping unknown full configuration byte 0x%02X", section)
+                _LOGGER.debug(
+                    "Skipping unknown full configuration byte at offset %d: 0x%02X",
+                    i,
+                    section,
+                )
                 i += 1
 
         if not outputs_seen:
@@ -638,6 +704,13 @@ class HidromoticClient:
             return False
 
         self.data_ready.set()
+        _LOGGER.debug(
+            "Full config parsed: inputs=%d outputs=%d tanks=%d next_offset=%d",
+            len(self._data["inputs"]),
+            len(self._data["outputs"]),
+            len(self._data["tanks"]),
+            i,
+        )
         return True
 
     async def _parse_running_data(self, data: bytes) -> None:
@@ -731,6 +804,17 @@ class HidromoticClient:
                     return
 
                 output = self._data.get("outputs_by_tipo", {}).get(tipo)
+                if tipo_upper == OUTPUT_TYPE_TANQUE:
+                    _LOGGER.debug(
+                        "Running tank update: offset=%d raw=%s type=0x%02X "
+                        "tank_id=%d state=%d level=%d",
+                        i,
+                        data[i : i + extra_size].hex(" "),
+                        tipo,
+                        tipo_id,
+                        estado,
+                        data[i + 3],
+                    )
                 if output:
                     output["estado"] = estado
                     if tipo_upper == OUTPUT_TYPE_ZONA and tipo_id in self._data["zones"]:
@@ -835,8 +919,14 @@ class HidromoticClient:
             )
 
         mode = 1 if automatic else 0
+        _LOGGER.debug("Changing tank mode: tank_id=%d requested_mode=%d", tank_id, mode)
         await self._send_command(f"#@T{tank_id}A{mode};#@+;")
         tank["modo"] = mode
+        _LOGGER.debug(
+            "Tank mode command sent: tank_id=%d local_mode=%d (awaiting device update)",
+            tank_id,
+            mode,
+        )
         self._notify_callbacks()
 
     async def set_pool_state(self, pool_id: int, on: bool) -> None:
