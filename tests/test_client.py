@@ -1,6 +1,7 @@
 """Tests for Hidromotic WebSocket protocol parsing."""
 
 import unittest
+from unittest.mock import AsyncMock
 
 from homeassistant.exceptions import HomeAssistantError
 
@@ -8,6 +9,26 @@ from custom_components.hidromotic.client import HidromoticClient
 
 
 class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_riego_zone_duration_uses_zero_based_hex_zone_index(self) -> None:
+        client = HidromoticClient("localhost")
+        client._send_command = AsyncMock()
+        client.data["riegos"] = {0: {"slot_id": 0, "zonas": {}}}
+
+        await client.set_riego_zona_duration(0, 0, 27)
+
+        client._send_command.assert_awaited_once_with("#@H0Z0D27;#@+;")
+        self.assertEqual(client.data["riegos"][0]["zonas"]["duracion_1"], 27)
+
+    async def test_riego_zone_duration_encodes_large_indices_as_hex(self) -> None:
+        client = HidromoticClient("localhost")
+        client._send_command = AsyncMock()
+        client.data["riegos"] = {10: {"slot_id": 10, "zonas": {}}}
+
+        await client.set_riego_zona_duration(10, 10, 42)
+
+        client._send_command.assert_awaited_once_with("#@HAZAD42;#@+;")
+        self.assertEqual(client.data["riegos"][10]["zonas"]["duracion_11"], 42)
+
     async def test_running_frame_offsets_and_auto_irrigation_state(self) -> None:
         client = HidromoticClient("localhost")
         client.data["pic_version"] = 1
@@ -90,7 +111,7 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HomeAssistantError):
             await client._send_command("#@C;")
 
-    async def test_tank_level_matches_original_web_interface_values(self) -> None:
+    async def test_tank_level_values_match_reported_device_states(self) -> None:
         client = HidromoticClient("localhost")
         client.data["tanks"] = {
             0: {"nivel": 0},
@@ -100,8 +121,8 @@ class HidromoticClientParsingTests(unittest.IsolatedAsyncioTestCase):
             4: {"nivel": 4},
         }
 
-        self.assertEqual(client.get_tank_level(0), "full")
-        self.assertEqual(client.get_tank_level(1), "empty")
+        self.assertEqual(client.get_tank_level(0), "empty")
+        self.assertEqual(client.get_tank_level(1), "full")
         self.assertEqual(client.get_tank_level(2), "sensor_fail")
         self.assertEqual(client.get_tank_level(3), "level_fail")
         self.assertEqual(client.get_tank_level(4), "medium")

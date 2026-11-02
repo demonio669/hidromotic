@@ -781,7 +781,7 @@ class HidromoticClient:
             return
 
         slot_id = riego["slot_id"]
-        command = f"#@H{int_to_hex(slot_id)}Z{zona_idx + 1}D{duration_minutes};#@+;"
+        command = f"#@H{int_to_hex(slot_id)}Z{int_to_hex(zona_idx)}D{duration_minutes};#@+;"
         await self._send_command(command)
 
         if "zonas" in riego:
