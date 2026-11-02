@@ -143,6 +143,25 @@ class HidromoticClientRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HomeAssistantError):
             await client._send_command("e")
 
+    async def test_protocol_debug_logs_requests_and_responses(self) -> None:
+        client = HidromoticClient("chi.local")
+        client._ws = WaitingWebSocket()
+
+        with self.assertLogs(
+            "custom_components.hidromotic.client", level="DEBUG"
+        ) as logs:
+            await client._send_command("e")
+            await client._process_text('{"result":{"id":"chi"}}')
+            await client._process_binary(b"?\x00")
+
+        output = "\n".join(logs.output)
+        self.assertIn(
+            'Protocol TX (request): {"id":1111,"method":"hdmt","params":{"c":"e"}}',
+            output,
+        )
+        self.assertIn("Protocol RX (JSON response): {'result': {'id': 'chi'}}", output)
+        self.assertIn("Protocol RX (binary response, command=?, length=2): 3f 00", output)
+
     async def test_send_command_enforces_minimum_interval(self) -> None:
         client = HidromoticClient("chi.local")
         websocket = WaitingWebSocket()

@@ -205,7 +205,7 @@ class HidromoticClient:
                 else:
                     payload = f'{{"id":1111,"method":"hdmt","params":{{"c":"{command}"}}}}'
 
-                _LOGGER.debug("Sending command: %s", payload)
+                _LOGGER.debug("Protocol TX (request): %s", payload)
                 self._last_command_sent_at = loop.time()
 
                 try:
@@ -282,7 +282,7 @@ class HidromoticClient:
         """Procesa respuestas recibidas en formato JSON extrayendo información del sistema."""
         try:
             parsed = json.loads(data)
-            _LOGGER.debug("Received JSON: %s", parsed)
+            _LOGGER.debug("Protocol RX (JSON response): %s", parsed)
 
             if isinstance(parsed, dict):
                 result = parsed.get("result", parsed)
@@ -321,7 +321,7 @@ class HidromoticClient:
                     if "routertime" in wifi_data:
                         self._data["wifi_routertime"] = wifi_data.get("routertime", 0)
         except json.JSONDecodeError:
-            _LOGGER.debug("Non-JSON text received: %s", data)
+            _LOGGER.debug("Protocol RX (text response): %s", data)
         self._notify_callbacks()
 
     async def _process_binary(self, data: bytes) -> None:
@@ -330,7 +330,13 @@ class HidromoticClient:
             return
 
         cmd = chr(data[0])
-        _LOGGER.debug("Processing binary command: %s, length: %d", cmd, len(data))
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            _LOGGER.debug(
+                "Protocol RX (binary response, command=%s, length=%d): %s",
+                cmd,
+                len(data),
+                data.hex(" "),
+            )
 
         async with self._lock:
             if cmd == "C":
