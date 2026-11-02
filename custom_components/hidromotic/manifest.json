@@ -2,6 +2,7 @@
   "domain": "hidromotic",
   "name": "Hidromotic",
   "codeowners": ["@bulju", "@demonio669"],
+  "categories": ["garden_plants"],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/demonio669/hidromotic",
