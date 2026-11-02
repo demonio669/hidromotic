@@ -17,8 +17,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, STATE_DISABLED, STATE_ON
+from .const import DOMAIN, STATE_ON
 from .coordinator import HidromoticCoordinator
+from .entity_helpers import output_is_available, update_output_entity_visibility
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,51 +51,61 @@ async def async_setup_entry(
         ciclon = coordinator.get_ciclon()
         riegos = coordinator.get_riegos()
 
-        if (len(zones) == len(added_zones) and
-            len(tanks) == len(added_tanks) and
-            len(pools) == len(added_pools) and
-            len(mangueras) == len(added_mangueras) and
-            len(ciclon) == len(added_ciclon) and
-            len(riegos) == len(added_riegos)):
-            return
-
         for zone_id, zone_data in zones.items():
-            if zone_id not in added_zones:
+            unique_id = f"{entry.entry_id}_zone_{zone_id}"
+            available = output_is_available(zone_data)
+            update_output_entity_visibility(hass, "switch", unique_id, available)
+            if available and zone_id not in added_zones:
                 added_zones.add(zone_id)
                 new_entities.append(
                     HidromoticZoneSwitch(coordinator, entry, zone_id, zone_data)
                 )
 
         for tank_id, tank_data in tanks.items():
-            if tank_id not in added_tanks:
+            unique_id = f"{entry.entry_id}_tank_{tank_id}"
+            available = output_is_available(tank_data)
+            update_output_entity_visibility(hass, "switch", unique_id, available)
+            if available and tank_id not in added_tanks:
                 added_tanks.add(tank_id)
                 new_entities.append(
                     HidromoticTankSwitch(coordinator, entry, tank_id, tank_data)
                 )
 
         for pool_id, pool_data in pools.items():
-            if pool_id not in added_pools:
+            unique_id = f"{entry.entry_id}_pool_{pool_id}"
+            available = output_is_available(pool_data)
+            update_output_entity_visibility(hass, "switch", unique_id, available)
+            if available and pool_id not in added_pools:
                 added_pools.add(pool_id)
                 new_entities.append(
                     HidromoticPoolSwitch(coordinator, entry, pool_id, pool_data)
                 )
 
         for manguera_id, manguera_data in mangueras.items():
-            if manguera_id not in added_mangueras:
+            unique_id = f"{entry.entry_id}_manguera_{manguera_id}"
+            available = output_is_available(manguera_data)
+            update_output_entity_visibility(hass, "switch", unique_id, available)
+            if available and manguera_id not in added_mangueras:
                 added_mangueras.add(manguera_id)
                 new_entities.append(
                     HidromoticMangueraSwitch(coordinator, entry, manguera_id, manguera_data)
                 )
 
         for ciclon_id, ciclon_data in ciclon.items():
-            if ciclon_id not in added_ciclon:
+            unique_id = f"{entry.entry_id}_ciclon_{ciclon_id}"
+            available = output_is_available(ciclon_data)
+            update_output_entity_visibility(hass, "switch", unique_id, available)
+            if available and ciclon_id not in added_ciclon:
                 added_ciclon.add(ciclon_id)
                 new_entities.append(
                     HidromoticCiclonSwitch(coordinator, entry, ciclon_id, ciclon_data)
                 )
 
         for riego_id, riego_data in riegos.items():
-            if riego_id not in added_riegos:
+            unique_id = f"{entry.entry_id}_riego_{riego_id}"
+            available = output_is_available(riego_data)
+            update_output_entity_visibility(hass, "switch", unique_id, available)
+            if available and riego_id not in added_riegos:
                 added_riegos.add(riego_id)
                 new_entities.append(
                     HidromoticRiegoSwitch(coordinator, entry, riego_id, riego_data)
@@ -157,7 +168,7 @@ class HidromoticBaseSwitch(CoordinatorEntity[HidromoticCoordinator], SwitchEntit
             return False
 
         item = collection.get(self._entity_id)
-        if item and item.get("estado") == STATE_DISABLED:
+        if not output_is_available(item):
             return False
 
         return super().available

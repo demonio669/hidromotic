@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import HidromoticConfigEntry
 from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
+from .entity_helpers import output_is_available
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -155,7 +156,7 @@ class HidromoticTankBaseBinarySensor(
     def available(self) -> bool:
         tanks = self.coordinator.get_tanks()
         tank = tanks.get(self._tank_id)
-        if tank:
+        if tank is not None and output_is_available(tank):
             nivel = tank.get("nivel", 0xFF)
             return nivel != 0xFF and nivel not in (2, 3) and super().available
         return False

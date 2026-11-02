@@ -28,6 +28,7 @@ from .const import (
     TANK_MEDIUM,
 )
 from .coordinator import HidromoticCoordinator
+from .entity_helpers import output_is_available, update_output_entity_visibility
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -72,7 +73,14 @@ async def async_setup_entry(
         new_entities: list[SensorEntity] = []
 
         for tank_id, tank_data in tanks.items():
-            if tank_id not in added_tanks:
+            available = output_is_available(tank_data)
+            for unique_id in (
+                f"{entry.entry_id}_tank_{tank_id}_level",
+                f"{entry.entry_id}_tank_{tank_id}_empty",
+                f"{entry.entry_id}_tank_{tank_id}_full",
+            ):
+                update_output_entity_visibility(hass, "sensor", unique_id, available)
+            if available and tank_id not in added_tanks:
                 added_tanks.add(tank_id)
                 new_entities.append(
                     HidromoticTankLevelSensor(coordinator, entry, tank_id, tank_data)
@@ -385,6 +393,11 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
         )
 
     @property
+    def available(self) -> bool:
+        tank = self.coordinator.get_tanks().get(self._tank_id)
+        return output_is_available(tank) and super().available
+
+    @property
     def native_value(self) -> str:
         return self.coordinator.client.get_tank_level(self._tank_id)
 
@@ -421,7 +434,7 @@ class HidromoticTankEmptyStateSensor(
     @property
     def available(self) -> bool:
         tank = self.coordinator.get_tanks().get(self._tank_id)
-        if tank is None:
+        if tank is None or not output_is_available(tank):
             return False
         level = tank.get("nivel", 0xFF)
         return (

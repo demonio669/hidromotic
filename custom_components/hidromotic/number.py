@@ -18,8 +18,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HidromoticConfigEntry
-from .const import DOMAIN, STATE_DISABLED
+from .const import DOMAIN
 from .coordinator import HidromoticCoordinator
+from .entity_helpers import output_is_available, update_output_entity_visibility
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -43,7 +44,10 @@ async def async_setup_entry(
 
         # 1. Controles de tiempo para Piletas
         for pool_id, pool_data in pools.items():
-            if pool_id not in added_pools:
+            unique_id = f"{entry.entry_id}_pool_{pool_id}_duration_set"
+            available = output_is_available(pool_data)
+            update_output_entity_visibility(hass, "number", unique_id, available)
+            if available and pool_id not in added_pools:
                 added_pools.add(pool_id)
                 new_entities.append(
                     HidromoticPoolDurationNumber(coordinator, entry, pool_id, pool_data)
@@ -51,7 +55,10 @@ async def async_setup_entry(
 
         # 2. Controles de duración de las salidas de zona, no de los programas.
         for zone_id, zone_data in zones.items():
-            if zone_id not in added_zones:
+            unique_id = f"{entry.entry_id}_zone_{zone_id}_duration_set"
+            available = output_is_available(zone_data)
+            update_output_entity_visibility(hass, "number", unique_id, available)
+            if available and zone_id not in added_zones:
                 added_zones.add(zone_id)
                 new_entities.append(
                     HidromoticZoneDurationNumber(
@@ -103,10 +110,8 @@ class HidromoticPoolDurationNumber(CoordinatorEntity[HidromoticCoordinator], Num
     @property
     def available(self) -> bool:
         pools = self.coordinator.get_pools()
-        if self._pool_id not in pools:
-            return False
         pool = pools.get(self._pool_id)
-        if pool and pool.get("estado") == STATE_DISABLED:
+        if not output_is_available(pool):
             return False
         return super().available
 
@@ -165,7 +170,7 @@ class HidromoticZoneDurationNumber(CoordinatorEntity[HidromoticCoordinator], Num
     def available(self) -> bool:
         zones = self.coordinator.get_zones()
         zone = zones.get(self._zone_id)
-        if zone is None or zone.get("estado") == STATE_DISABLED:
+        if not output_is_available(zone):
             return False
         return super().available
 
