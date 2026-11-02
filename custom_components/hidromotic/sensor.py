@@ -538,7 +538,7 @@ class HidromoticTankLevelSensor(CoordinatorEntity[HidromoticCoordinator], Sensor
 class HidromoticTankEmptyStateSensor(
     CoordinatorEntity[HidromoticCoordinator], SensorEntity
 ):
-    """Text sensor reporting whether a tank is empty as true or false."""
+    """Text sensor reporting the tank state as full or empty."""
 
     _attr_has_entity_name = True
     _attr_icon = "mdi:water-alert"
@@ -569,13 +569,16 @@ class HidromoticTankEmptyStateSensor(
         )
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         tank = self.coordinator.get_tanks().get(self._tank_id)
-        return str(tank is not None and tank.get("nivel") == TANK_EMPTY).lower()
+        if tank is None:
+            return None
+        is_empty = tank.get("nivel") == TANK_EMPTY
+        return "Vacío" if is_empty else "Lleno"
 
 
 class HidromoticTankFullStateSensor(HidromoticTankEmptyStateSensor):
-    """Text sensor reporting whether a tank is full as true or false."""
+    """Text sensor reporting the tank state as full or empty."""
 
     _attr_icon = "mdi:water"
 
@@ -592,6 +595,9 @@ class HidromoticTankFullStateSensor(HidromoticTankEmptyStateSensor):
         self._attr_name = f"{base_label} Lleno"
 
     @property
-    def native_value(self) -> str:
+    def native_value(self) -> str | None:
         tank = self.coordinator.get_tanks().get(self._tank_id)
-        return str(tank is not None and tank.get("nivel") == TANK_FULL).lower()
+        if tank is None:
+            return None
+        is_full = tank.get("nivel") == TANK_FULL
+        return "Lleno" if is_full else "Vacío"

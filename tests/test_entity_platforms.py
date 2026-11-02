@@ -197,15 +197,19 @@ class HidromoticEntityPlatformTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(level.available)
         self.assertEqual(level.native_value, "full")
         self.assertTrue(empty.available)
-        self.assertEqual(empty.native_value, "false")
-        self.assertEqual(full.native_value, "true")
+        self.assertEqual(empty.native_value, "Lleno")
+        self.assertEqual(full.native_value, "Lleno")
         self.assertTrue(tank_binary.available)
 
         data["nivel"] = 1
         self.coordinator.client.get_tank_level.return_value = "empty"
         self.assertEqual(level.native_value, "empty")
-        self.assertEqual(empty.native_value, "true")
-        self.assertEqual(full.native_value, "false")
+        self.assertEqual(empty.native_value, "Vacío")
+        self.assertEqual(full.native_value, "Vacío")
+
+        data["nivel"] = 4
+        self.assertEqual(empty.native_value, "Lleno")
+        self.assertEqual(full.native_value, "Vacío")
 
         data["estado"] = 7
         self.assertFalse(level.available)
