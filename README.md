@@ -13,15 +13,13 @@ configurados en el CHI.
 1. Verificá que [HACS](https://www.hacs.xyz/) esté instalado y configurado en Home
    Assistant.
 2. Abrí **HACS** y entrá en **Integraciones**.
-3. Abrí el menú de opciones (tres puntos) y seleccioná **Repositorios
-   personalizados**.
-4. Agregá `https://github.com/demonio669/hidromotic` y elegí **Integración**
-   como categoría.
-5. Buscá **Hidromotic** en HACS y seleccioná **Descargar**.
-6. Reiniciá Home Assistant.
+3. Buscá **Hidromotic** en el catálogo de integraciones de HACS.
+4. Abrí la integración y seleccioná **Descargar**.
+5. Reiniciá Home Assistant.
 
-Para actualizarla, buscá Hidromotic en HACS, instalá la actualización disponible
-y reiniciá Home Assistant.
+Para actualizarla, abrí **HACS > Integraciones**, buscá **Hidromotic** e
+instalá la actualización disponible. Reiniciá Home Assistant para aplicar los
+cambios.
 
 ## Configuración
 
