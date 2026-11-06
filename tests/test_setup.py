@@ -68,6 +68,7 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
         self.hass.config_entries.async_forward_entry_setups.assert_awaited_once()
 
     async def test_setup_entry_selects_cloud_client_from_config_entry(self) -> None:
+        self.entry.unique_id = "chi_c985ab"
         self.entry.data = {
             CONF_CONNECTION_TYPE: CONNECTION_TYPE_CLOUD,
             "username": "account",
@@ -90,6 +91,7 @@ class HidromoticSetupTests(unittest.IsolatedAsyncioTestCase):
             "account",
             "secret",
             session=session,
+            device_id="chi_c985ab",
         )
 
     async def test_setup_entry_migrates_mac_unique_id_to_device_id(self) -> None:

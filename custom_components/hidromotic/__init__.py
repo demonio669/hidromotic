@@ -49,6 +49,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HidromoticConfigEntry) -
             entry.data["username"],
             entry.data["password"],
             session=session,
+            device_id=entry.unique_id,
         )
         connection_name = "Hidromotic cloud"
     else:

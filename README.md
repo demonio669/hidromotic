@@ -33,6 +33,14 @@ cambios.
 4. Confirmá para finalizar. Para Local, el CHI debe ser accesible desde Home
    Assistant. Para Cloud, Home Assistant necesita acceso a Internet.
 
+La conexión Cloud utiliza el inicio de sesión y el protocolo JSON del nuevo
+portal de Hidromotic. Recibe el estado del CHI y sus actualizaciones en tiempo
+real; si detecta una actualización perdida, solicita una resincronización.
+Si el CHI queda fuera de línea o deja de responder, las entidades se marcan
+como no disponibles aunque la conexión con el portal siga abierta. Las entradas
+ya configuradas conservan el ID de su CHI para no controlar otro equipo de la
+misma cuenta. Este cambio no afecta la conexión Local.
+
 ### Cambiar el modo de conexión
 
 No es necesario eliminar la integración para cambiar entre Local y Cloud. En
